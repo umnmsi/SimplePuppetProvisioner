@@ -1,4 +1,5 @@
 # Simple Puppet Provisioner
+[![Build Status](https://travis-ci.org/mbaynton/SimplePuppetProvisioner.svg?branch=master)](https://travis-ci.org/mbaynton/SimplePuppetProvisioner)
 
 ## Configuration
 The daemon will look for its configuration file in the working directory and in
