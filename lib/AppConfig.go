@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/viper"
 	"github.com/go-chat-bot/bot/irc"
+	"github.com/spf13/viper"
 )
 
 type AppConfig struct {
@@ -21,8 +21,8 @@ type HttpAuthConfig struct {
 }
 
 type NotificationsConfig struct {
-	Type string
-	IrcConfig *irc.Config
+	Type       string
+	IrcConfig  *irc.Config
 	SlackToken *string
 }
 

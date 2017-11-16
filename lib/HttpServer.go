@@ -1,9 +1,9 @@
 package lib
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
-	"encoding/json"
 )
 
 type HttpServer struct {
