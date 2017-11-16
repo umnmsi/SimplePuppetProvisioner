@@ -1,0 +1,4 @@
+---
+BindAddress: 127.0.0.1:8240
+HttpAuth:
+  Type: foo

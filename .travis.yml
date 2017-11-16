@@ -1,0 +1,22 @@
+go_import_path: github.com/mbaynton/SimplePuppetProvisioner
+
+language: go
+go:
+  - 1.7.5
+  - 1.8
+  - tip
+
+os:
+  - linux
+
+matrix:
+  allow_failures:
+    - go: tip
+  fast_finish: true
+
+script:
+  - go install ./...
+  - diff -u <(echo -n) <(gofmt -d .)
+  - go test -v ./...
+
+sudo: false
