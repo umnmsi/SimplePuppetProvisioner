@@ -9,8 +9,8 @@ import (
 )
 
 type AppConfig struct {
-	BindAddress string
-	HttpAuth    *HttpAuthConfig
+	BindAddress   string
+	HttpAuth      *HttpAuthConfig
 	Notifications *NotificationsConfig
 }
 
