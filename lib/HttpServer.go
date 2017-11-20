@@ -8,13 +8,15 @@ import (
 
 type HttpServer struct {
 	appConfig AppConfig
+	notifier  *Notifications
 	server    http.Server
 	startTime time.Time
 }
 
-func NewHttpServer(config AppConfig) *HttpServer {
+func NewHttpServer(config AppConfig, notifier *Notifications) *HttpServer {
 	server := new(HttpServer)
 	server.appConfig = config
+	server.notifier = notifier
 
 	return server
 }
@@ -22,7 +24,7 @@ func NewHttpServer(config AppConfig) *HttpServer {
 func (c *HttpServer) Start() {
 	router := http.NewServeMux()
 	c.createRoutes(router)
-	c.server = http.Server{Addr: c.appConfig.BindAddress, Handler: router}
+	c.server = http.Server{Addr: c.appConfig.BindAddress, Handler: router, ErrorLog: c.appConfig.Log}
 	c.startTime = time.Now()
 	c.server.ListenAndServe()
 }
@@ -32,10 +34,12 @@ func (c *HttpServer) createRoutes(router *http.ServeMux) {
 
 	protectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig)
 	protectedRoutes := http.NewServeMux()
-	//protectedRoutes.Handle("/provision", nil)
+
+	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier)
+	protectedRoutes.Handle("/provision", provisionHandler)
 
 	// If it didn't match an unprotected route, it goes through the protection middleware.
-	router.Handle(".*", protectionMiddlewareFactory.WrapInProtectionMiddleware(protectedRoutes))
+	router.Handle("/", protectionMiddlewareFactory.WrapInProtectionMiddleware(protectedRoutes))
 }
 
 func (c *HttpServer) internalStatsHandler(response http.ResponseWriter, request *http.Request) {

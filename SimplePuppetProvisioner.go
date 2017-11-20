@@ -7,6 +7,8 @@ import (
 func main() {
 	appConfig := lib.LoadTheConfig("spp.conf", []string{".", "/etc/spp"})
 
-	server := lib.NewHttpServer(appConfig)
+	notifier := lib.NewNotifications(&appConfig)
+
+	server := lib.NewHttpServer(appConfig, notifier)
 	server.Start()
 }

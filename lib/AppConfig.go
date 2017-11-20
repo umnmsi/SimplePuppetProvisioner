@@ -4,14 +4,21 @@ import (
 	"fmt"
 	"os"
 
+	"bufio"
 	"github.com/go-chat-bot/bot/irc"
 	"github.com/spf13/viper"
+	"io"
+	"io/ioutil"
+	"log"
 )
 
 type AppConfig struct {
 	BindAddress   string
+	LogFile       string
 	HttpAuth      *HttpAuthConfig
-	Notifications *NotificationsConfig
+	Notifications []*NotificationsConfig
+
+	Log *log.Logger
 }
 
 type HttpAuthConfig struct {
@@ -46,6 +53,7 @@ func LoadTheConfig(configName string, configPaths []string) AppConfig {
 	}
 
 	C.setDefaults()
+	C.establishLogger()
 
 	return C
 }
@@ -59,4 +67,21 @@ func (ctx *AppConfig) setDefaults() {
 			ctx.HttpAuth.Realm = "[realm not configured]"
 		}
 	}
+}
+
+func (ctx *AppConfig) establishLogger() {
+	var logOutput io.Writer
+	if ctx.LogFile != "" {
+		fileOutput, err := os.OpenFile(ctx.LogFile, os.O_APPEND|os.O_CREATE, 0640)
+		if err != nil {
+			fmt.Errorf("Unable to create or open logfile: %s\n", err.Error())
+			os.Exit(1)
+		}
+		logOutput = bufio.NewWriter(fileOutput)
+	} else {
+		// A null writer
+		logOutput = ioutil.Discard
+	}
+
+	ctx.Log = log.New(logOutput, "", log.LstdFlags)
 }
