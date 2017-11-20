@@ -13,8 +13,8 @@ matrix:
   fast_finish: true
 
 install:
-  - go get -t -v ./...
   - git clone https://github.com/mbaynton/bot.git $GOPATH/src/github.com/go-chat-bot/bot
+  - go get -t -v ./...
 
 script:
   - go install ./...
