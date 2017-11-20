@@ -1,8 +1,9 @@
 ---
 BindAddress: 127.0.0.1:8240
 Notifications:
-  Type: irc
-  IrcConfig:
-    Server: irc.msi.umn.edu
-    Channels: "changelog,iops"
-    Nick: PuppetBot
+  - Type: irc
+    IrcConfig:
+      Server: irc.msi.umn.edu:6667
+      Channels: "#iopsdev"
+      Nick: PuppetBot
+      Password: ""
