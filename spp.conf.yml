@@ -1,5 +1,17 @@
 ---
 BindAddress: 127.0.0.1:8240
+LogFile: /tmp/spp.log
+
+# HttpAuth:
+#   Type: basic # digest also supported.
+#   Realm: puppet.my.org
+#   DbFile: /path/to/.htpasswd # Consider the htpasswd or htdigest utilities
+
+PuppetExecutable: /opt/puppetlabs/bin/puppet
+
+# This defaults to /etc/puppetlabs/puppet which is almost always correct, so should not need to be set here.
+# PuppetConfDir: /etc/puppetlabs/puppet
+
 Notifications:
   - Type: irc
     IrcConfig:

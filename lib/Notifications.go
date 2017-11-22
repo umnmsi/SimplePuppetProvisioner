@@ -21,7 +21,7 @@ func (ctx *Notifications) Notify(message string) {
 	if ctx.enabled {
 		for _, target := range ctx.targets {
 			for _, channel := range target.notifyChannels {
-				target.bot.SendUnsolicitedMessage(channel, message, nil)
+				target.bot.SendMessage(channel, message, nil)
 			}
 		}
 	}

@@ -6,17 +6,22 @@ import (
 
 	"bufio"
 	"github.com/go-chat-bot/bot/irc"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
 	"github.com/spf13/viper"
 	"io"
 	"io/ioutil"
 	"log"
+	"runtime"
 )
 
 type AppConfig struct {
-	BindAddress   string
-	LogFile       string
-	HttpAuth      *HttpAuthConfig
-	Notifications []*NotificationsConfig
+	BindAddress      string
+	LogFile          string
+	HttpAuth         *HttpAuthConfig
+	PuppetExecutable string
+	PuppetConfDir    string
+	PuppetConfig     *puppetconfig.PuppetConfig
+	Notifications    []*NotificationsConfig
 
 	Log *log.Logger
 }
@@ -34,9 +39,13 @@ type NotificationsConfig struct {
 }
 
 func LoadTheConfig(configName string, configPaths []string) AppConfig {
-	viper.SetConfigName(configName) // So spp.conf.json, spp.conf.yml, ...
-	for _, path := range configPaths {
-		viper.AddConfigPath(path)
+	if len(configPaths) == 0 {
+		viper.SetConfigFile(configName)
+	} else {
+		viper.SetConfigName(configName) // So spp.conf.json, spp.conf.yml, ...
+		for _, path := range configPaths {
+			viper.AddConfigPath(path)
+		}
 	}
 
 	// Can we find a properly formatted file?
@@ -55,6 +64,12 @@ func LoadTheConfig(configName string, configPaths []string) AppConfig {
 	C.setDefaults()
 	C.establishLogger()
 
+	configLoader := puppetconfig.NewPuppetConfigParser(C.Log)
+	puppetConfig := configLoader.LoadPuppetConfig(C.PuppetExecutable, C.PuppetConfDir)
+	if puppetConfig == nil {
+		panic(fmt.Errorf("invalid puppet configuration, cannot proceed"))
+	}
+
 	return C
 }
 
@@ -67,9 +82,24 @@ func (ctx *AppConfig) setDefaults() {
 			ctx.HttpAuth.Realm = "[realm not configured]"
 		}
 	}
+
+	if ctx.PuppetExecutable == "" {
+		ctx.PuppetExecutable = "/opt/puppetlabs/bin/puppet"
+	}
+	if ctx.PuppetConfDir == "" {
+		if runtime.GOOS == "windows" {
+			ctx.PuppetConfDir = "C:\\ProgramData\\PuppetLabs\\puppet\\etc"
+		} else {
+			ctx.PuppetConfDir = "/etc/puppetlabs/puppet"
+		}
+	}
 }
 
 func (ctx *AppConfig) establishLogger() {
+	ctx.Log = log.New(os.Stdout, "", log.LstdFlags)
+}
+
+func (ctx *AppConfig) MoveLoggingToFile() {
 	var logOutput io.Writer
 	if ctx.LogFile != "" {
 		fileOutput, err := os.OpenFile(ctx.LogFile, os.O_APPEND|os.O_CREATE, 0640)
@@ -82,6 +112,6 @@ func (ctx *AppConfig) establishLogger() {
 		// A null writer
 		logOutput = ioutil.Discard
 	}
-
-	ctx.Log = log.New(logOutput, "", log.LstdFlags)
+	ctx.Log.Printf("This log is moving to %s", ctx.LogFile)
+	ctx.Log.SetOutput(logOutput)
 }

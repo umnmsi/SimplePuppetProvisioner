@@ -3,7 +3,7 @@
 
 This software is designed to live on your [Puppet](https://puppet.com/) master to help automate the process of 
 introducing new nodes to your infrastructure. In particular, it currently can help with
-  * Signing your agent's certificates
+  * Signing your agent's certificates.
   * Informing an [ENC](https://puppet.com/docs/puppet/5.3/nodes_external.html#what-is-an-enc) which puppet environment a new hostname should get placed in.
 
 It does this by offering a simple authenticated HTTP API that new nodes may call out to during their first boot.
