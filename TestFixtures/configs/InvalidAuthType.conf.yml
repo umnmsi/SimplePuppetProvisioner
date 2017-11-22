@@ -1,4 +1,5 @@
 ---
 BindAddress: 127.0.0.1:8240
+PuppetExecutable: ../TestFixtures/fakepuppet.sh
 HttpAuth:
   Type: foo

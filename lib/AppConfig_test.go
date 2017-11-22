@@ -5,7 +5,7 @@ import (
 )
 
 func TestHttpAuthConfig(t *testing.T) {
-	testConfig := LoadTheConfig("NoRealm.conf", []string{"../TestFixtures/configs"})
+	testConfig := LoadTheConfig("../TestFixtures/configs/NoRealm.conf.yml", []string{})
 	if testConfig.HttpAuth == nil {
 		t.Errorf("Http Authentication configuration was not unmarshaled\n")
 	}
@@ -15,7 +15,7 @@ func TestHttpAuthConfig(t *testing.T) {
 }
 
 func TestDefaultHttpAuthRealm(t *testing.T) {
-	testConfig := LoadTheConfig("NoRealm.conf", []string{"../TestFixtures/configs"})
+	testConfig := LoadTheConfig("../TestFixtures/configs/NoRealm.conf.yml", []string{})
 	if testConfig.HttpAuth.Realm == "" {
 		t.Errorf("No default http authentication realm was set.\n")
 	}
