@@ -33,8 +33,8 @@ func TestNewNotifications_MultipleIrcLogs(t *testing.T) {
 
 	config := AppConfig{
 		Notifications: []*NotificationsConfig{
-			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "server", Channels: []string{"#chan"}}},
-			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "server2", Channels: []string{"#chan"}}},
+			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "server:6667", Channels: []string{"#chan"}}},
+			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "server2:6667", Channels: []string{"#chan"}}},
 		},
 		Log: testLog,
 	}
