@@ -18,6 +18,7 @@ receives an authenticated request, it will sign the certificate and/or set the e
 node.
 
 ## Configuration
+### File formats and location
 The daemon will look for its configuration file in the working directory and in
 the directory `/etc/spp`. Configuration may be specified as yaml, toml, json, and
 other formats supported by [the viper configuration library](https://github.com/spf13/viper).
@@ -29,6 +30,13 @@ Example configuration filenames:
 
 Only the first configuration file found is read.
 
+Alternatively, a specific configuration file can be given as an option to the SimplePuppetProvisioner when it
+is started:
+```bash
+$ ./SimplePuppetProvisioner --config /path/to/my/config.yml
+```
+
+### File contents
 A complete example configuration in yaml is maintained [in the source git repository](https://github.com/mbaynton/SimplePuppetProvisioner/blob/master/spp.conf.yml).
 Most functions the daemon is capable of are optional and will simply not be performed if left
 unconfigured. These include
@@ -42,4 +50,8 @@ The daemon offers a simple report of internal statistics over its http interface
 It does not require any HTTP authentication and should always return an `HTTP 200`. It is therefore
 suitable for use as the target of a primitive HTTP heartbeat health checker.
 
+## Stopping
+The process should shut down cleanly in response to SIGTERMs.
+
+- - -
 Development of this software was sponsored by the [Minnesota Supercomputing Institute](https://www.msi.umn.edu/).
