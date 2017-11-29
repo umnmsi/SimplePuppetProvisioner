@@ -13,9 +13,10 @@ type PuppetConfigParser struct {
 }
 
 type PuppetConfig struct {
-	SslDir        string
-	CsrDir        string
-	SignedCertDir string
+	PuppetExecutable string
+	SslDir           string
+	CsrDir           string
+	SignedCertDir    string
 }
 
 func NewPuppetConfigParser(log *log.Logger) *PuppetConfigParser {
@@ -44,6 +45,7 @@ func (ctx PuppetConfigParser) LoadPuppetConfig(puppetExecutable string, puppetCo
 
 	// have we read everything we need?
 	if validateParsedConfig(ctx.parsedConfig) {
+		ctx.parsedConfig.PuppetExecutable = puppetExecutable
 		return ctx.parsedConfig
 	} else {
 		ctx.log.Print("Output of \"puppet config print\" was not in the correct format.")

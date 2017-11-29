@@ -23,7 +23,8 @@ type AppConfig struct {
 	PuppetConfig     *puppetconfig.PuppetConfig
 	Notifications    []*NotificationsConfig
 
-	Log *log.Logger
+	Log       *log.Logger
+	logBuffer *bufio.Writer
 }
 
 type HttpAuthConfig struct {
@@ -67,8 +68,10 @@ func LoadTheConfig(configName string, configPaths []string) AppConfig {
 	configLoader := puppetconfig.NewPuppetConfigParser(C.Log)
 	puppetConfig := configLoader.LoadPuppetConfig(C.PuppetExecutable, C.PuppetConfDir)
 	if puppetConfig == nil {
-		panic(fmt.Errorf("invalid puppet configuration, cannot proceed"))
+		C.Log.Println("Invalid puppet installation, cannot proceed.")
+		os.Exit(1)
 	}
+	C.PuppetConfig = puppetConfig
 
 	return C
 }
@@ -101,17 +104,27 @@ func (ctx *AppConfig) establishLogger() {
 
 func (ctx *AppConfig) MoveLoggingToFile() {
 	var logOutput io.Writer
+	var newLocation string
 	if ctx.LogFile != "" {
 		fileOutput, err := os.OpenFile(ctx.LogFile, os.O_APPEND|os.O_CREATE, 0640)
 		if err != nil {
 			fmt.Errorf("Unable to create or open logfile: %s\n", err.Error())
 			os.Exit(1)
 		}
-		logOutput = bufio.NewWriter(fileOutput)
+		ctx.logBuffer = bufio.NewWriter(fileOutput)
+		logOutput = ctx.logBuffer
+		newLocation = ctx.LogFile
 	} else {
 		// A null writer
 		logOutput = ioutil.Discard
+		newLocation = "a black hole (log location not configured.)"
 	}
-	ctx.Log.Printf("This log is moving to %s", ctx.LogFile)
+	ctx.Log.Printf("This log is moving to %s", newLocation)
 	ctx.Log.SetOutput(logOutput)
+}
+
+func (ctx *AppConfig) FlushLog() {
+	if ctx.logBuffer != nil {
+		ctx.logBuffer.Flush()
+	}
 }
