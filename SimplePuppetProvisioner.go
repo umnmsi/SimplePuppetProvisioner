@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/fsnotify/fsnotify"
+	"github.com/mbaynton/SimplePuppetProvisioner/interfaces"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
 	"os"
@@ -27,7 +29,23 @@ func main() {
 
 	appConfig := lib.LoadTheConfig(*configFile, searchDirs)
 	notifier := lib.NewNotifications(&appConfig)
-	certSigner := certsign.NewCertSigner(*appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
+	csrWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		appConfig.Log.Println("Unable to start certificate signing request watcher. Cannot proceed.")
+		os.Exit(1)
+	}
+	watcher := interfaces.FsnotifyWatcher{
+		Add:    csrWatcher.Add,
+		Close:  csrWatcher.Close,
+		Remove: csrWatcher.Remove,
+		Events: csrWatcher.Events,
+		Errors: csrWatcher.Errors,
+	}
+	certSigner, err := certsign.NewCertSigner(*appConfig.PuppetConfig, appConfig.Log, &watcher, notifier.Notify)
+	if err != nil {
+		appConfig.Log.Println("Unable to start certificate signing manager. Cannot proceed.")
+		os.Exit(1)
+	}
 
 	server := lib.NewHttpServer(appConfig, notifier, certSigner)
 
