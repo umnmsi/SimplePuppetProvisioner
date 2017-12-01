@@ -43,7 +43,7 @@ func (c *HttpServer) createRoutes(router *http.ServeMux) {
 	protectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig)
 	protectedRoutes := http.NewServeMux()
 
-	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier)
+	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier, c.certSigner)
 	protectedRoutes.Handle("/provision", provisionHandler)
 
 	// If it didn't match an unprotected route, it goes through the protection middleware.
