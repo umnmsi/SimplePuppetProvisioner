@@ -35,8 +35,8 @@ type CertSigner struct {
 }
 
 type SigningResult struct {
-	success bool
-	message string
+	Success bool
+	Message string
 }
 
 func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watcher *interfaces.FsnotifyWatcher, notifyCallback func(message string)) (*CertSigner, error) {
@@ -69,7 +69,7 @@ func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watc
 func (ctx *CertSigner) Sign(hostname string, cleanExistingCert bool) <-chan SigningResult {
 	resultChan := make(chan SigningResult, 1)
 	if ctx.stopped {
-		resultChan <- SigningResult{success: false, message: "The certificate signing manager has been stopped. Shutting down?"}
+		resultChan <- SigningResult{Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
 		close(resultChan)
 		return resultChan
 	}
@@ -95,7 +95,7 @@ func (ctx *CertSigner) Shutdown() {
 }
 
 func (ctx *CertSigner) signQueueWorker() {
-	for message, opened := <-ctx.signQueue; opened; {
+	for message, opened := <-ctx.signQueue; opened; message, opened = <-ctx.signQueue {
 		temp := *ctx.authorizedCertSubjects
 		if message.resultChan != nil {
 			// This request came from an external caller.
@@ -103,7 +103,7 @@ func (ctx *CertSigner) signQueueWorker() {
 			temp[message.certSubject] = message.resultChan
 		} else {
 			// This request came from the CSR watcher.
-			// We'll only process this message if it is for a preauthorized subject with an available result channel.
+			// We'll only process this Message if it is for a preauthorized subject with an available result channel.
 			_, present := temp[message.certSubject]
 			if !present {
 				continue
@@ -130,6 +130,7 @@ func (ctx *CertSigner) signQueueWorker() {
 					// it can sign.
 					ctx.log.Printf("Revocation of %s failed. *** Stdout:\n%s\n*** Stderr:\n%s\n", message.certSubject, ctx.lastCmdStdout.String(), ctx.lastCmdStderr.String())
 				} else {
+					ctx.notify(fmt.Sprintf("An existing certificate for %s was revoked to make way for the new certificate.", message.certSubject))
 					ctx.log.Printf("Revoked %s.\n", message.certSubject)
 				}
 				certExists = false
@@ -164,7 +165,6 @@ func (ctx *CertSigner) signQueueWorker() {
 			ctx.log.Println(info)
 			ctx.signingDone(message.certSubject, true, info)
 		}
-
 	}
 
 	// Signal stopped.
@@ -215,8 +215,8 @@ func (ctx *CertSigner) signingDone(subject string, success bool, message string)
 	resultChan, present := temp[subject]
 	if present {
 		resultChan <- SigningResult{
-			success: success,
-			message: message,
+			Success: success,
+			Message: message,
 		}
 		close(resultChan)
 		delete(temp, subject)

@@ -93,7 +93,7 @@ func TestCertSigner_Sign_FailsIfStopped(t *testing.T) {
 	resultChan := sut.Sign("foo.bar.com", false)
 	result := <-resultChan
 
-	if result.success {
+	if result.Success {
 		t.Error("Signing did not fail when signing manager had been shutdown")
 	}
 }
@@ -133,6 +133,8 @@ func TestCertSigner_Sign(t *testing.T) {
 		t.FailNow()
 	}
 
+	defer func() { sut.Shutdown() }()
+
 	// Use a dummy for OpenFile that reports no existing cert.
 	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
 		expect := "/testssl/cert/foo.bar.com.pem"
@@ -145,15 +147,15 @@ func TestCertSigner_Sign(t *testing.T) {
 	resultChan := sut.Sign("foo.bar.com", true)
 	result := <-resultChan
 
-	if !result.success {
-		t.Error("Signing result was not success.")
+	if !result.Success {
+		t.Error("Signing result was not Success.")
 	}
 	expect := "Certificate for \"foo.bar.com\" has been signed."
-	if result.message != expect {
-		t.Errorf("Expected signing result message %s, got %s", expect, result.message)
+	if result.Message != expect {
+		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
 	}
 	if lastNotification != expect {
-		t.Errorf("Expected notification message %s, got %s", expect, result.message)
+		t.Errorf("Expected notification Message %s, got %s", expect, result.Message)
 	}
 
 	logStuff := logBuf.String()
@@ -161,7 +163,189 @@ func TestCertSigner_Sign(t *testing.T) {
 		t.Error("Log suggested revocation attempted, but existing certificate should not have been found.")
 	}
 	if !strings.Contains(logStuff, expect) {
-		t.Error("Expected signing result success message not found in log.")
+		t.Error("Expected signing result Success Message not found in log.")
+	}
+}
+
+func TestCertSigner_Sign_RevokesWhenAppropriate(t *testing.T) {
+	var notifications []string
+	var mockNotification = func(message string) {
+		notifications = append(notifications, message)
+	}
+	sut, err, logBuf := sutFactory(nil, mockNotification, []string{"TestHelperPuppetRevokeOk", "TestHelperPuppetSignOk"})
+	if err != nil {
+		t.FailNow()
+	}
+
+	defer func() { sut.Shutdown() }()
+
+	// Use a dummy for OpenFile that reports an existing cert.
+	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		expect := "/testssl/cert/foo.bar.com.pem"
+		if name != expect {
+			t.Errorf("Expected to test for existing certificate at %s, got %s", expect, name)
+		}
+		self, _ := os.Executable()
+		return os.OpenFile(self, flag, perm)
+	}
+
+	resultChan := sut.Sign("foo.bar.com", true)
+	result := <-resultChan
+
+	if !result.Success {
+		t.Error("Signing result was not Success")
+	}
+	expect := "Certificate for \"foo.bar.com\" has been signed."
+	if result.Message != expect {
+		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
+	}
+	if notifications[1] != expect {
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
+	}
+	expect = "An existing certificate for foo.bar.com was revoked to make way for the new certificate."
+	if notifications[0] != expect {
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[0])
+	}
+
+	logStuff := logBuf.String()
+	if !strings.Contains(logStuff, "Revoking existing") {
+		t.Error("Log did not contain entry for beginning revocation.")
+	}
+	if !strings.Contains(logStuff, "Revoked foo.bar.com") {
+		t.Error("Log did not contain entry for successful revocation.")
+	}
+	if !strings.Contains(logStuff, "has been signed.") {
+		t.Error("Log did not contain entry for successful signing.")
+	}
+}
+
+func TestCertSigner_Sign_HandlesSigningError(t *testing.T) {
+	var lastNotification string
+	var mockNotification = func(message string) {
+		lastNotification = message
+	}
+	sut, err, logBuf := sutFactory(nil, mockNotification, []string{"TestHelperPuppetSignFail"})
+	if err != nil {
+		t.FailNow()
+	}
+
+	defer func() { sut.Shutdown() }()
+
+	// Use a dummy for OpenFile that reports no existing cert.
+	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		expect := "/testssl/cert/foo.bar.com.pem"
+		if name != expect {
+			t.Errorf("Expected to test for existing certificate at %s, got %s", expect, name)
+		}
+		return nil, errors.New("simulated error")
+	}
+
+	resultChan := sut.Sign("foo.bar.com", true)
+	result := <-resultChan
+
+	if result.Success {
+		t.Error("Expected signing failure reported Success.")
+	}
+	expect := "Certificate signing for \"foo.bar.com\" failed! More info in log."
+	if result.Message != expect {
+		t.Error("Expected result Message %s, got %s", expect, result.Message)
+	}
+	if lastNotification != expect {
+		t.Error("Expected notification %s, got %s", expect, lastNotification)
+	}
+
+	logStuff := logBuf.String()
+	if !strings.Contains(logStuff, "Certificate signing for foo.bar.com failed") {
+		t.Error("Log did not contain failure entry")
+	}
+	if !strings.Contains(logStuff, "Simulated failure in certificate signing") {
+		t.Error("Log did not contain output from failed signing process")
+	}
+}
+
+func TestCertSigner_Sign_HandlesDeferredCsr(t *testing.T) {
+	var notifications []string
+	var watcher = &interfaces.FsnotifyWatcher{
+		Events: make(chan fsnotify.Event),
+	}
+	var mockNotification = func(message string) {
+		notifications = append(notifications, message)
+
+		if message == "Certificate for \"foo.bar.com\" will be signed when a matching CSR arrives." {
+			// When the signing goroutine gets this far, post an event on the watcher Events channel,
+			// as fsnotify would do based on an inotify event.
+			watcher.Events <- fsnotify.Event{
+				Name: "/testssl/csr/foo.bar.com.pem",
+				Op:   fsnotify.Create,
+			}
+		}
+	}
+	sut, err, logBuf := sutFactory(watcher, mockNotification, []string{"TestHelperPuppetSignNoCsr", "TestHelperPuppetSignOk"})
+	if err != nil {
+		t.FailNow()
+	}
+
+	defer func() { sut.Shutdown() }()
+
+	// Use a dummy for OpenFile that reports no existing cert.
+	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		expect := "/testssl/cert/foo.bar.com.pem"
+		if name != expect {
+			t.Errorf("Expected to test for existing certificate at %s, got %s", expect, name)
+		}
+		return nil, errors.New("simulated error")
+	}
+
+	resultChan := sut.Sign("foo.bar.com", true)
+	result := <-resultChan
+
+	logStuff := logBuf.String()
+	if !result.Success {
+		t.Error("Signing result was not Success")
+	}
+	expect := "Certificate for \"foo.bar.com\" has been signed."
+	if result.Message != expect {
+		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
+	}
+	if notifications[1] != expect {
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
+	}
+	if !strings.Contains(logStuff, expect) {
+		t.Error("Log did not contain entry for successful signing.")
+	}
+
+	expect = "Certificate for \"foo.bar.com\" will be signed when a matching CSR arrives."
+	if notifications[0] != expect {
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[0])
+	}
+	if !strings.Contains(logStuff, expect) {
+		t.Error("Log did not contain entry for missing CSR")
+	}
+}
+
+func TestCertSigner_Sign_IgnoresUnauthorizedCsrs(t *testing.T) {
+	var notifications []string
+	var mockNotification = func(message string) {
+		notifications = append(notifications, message)
+	}
+
+	sut, err, _ := sutFactory(nil, mockNotification, []string{"TestHelperPuppetSignOk"})
+	if err != nil {
+		t.FailNow()
+	}
+
+	sut.signQueue <- signChanMessage{
+		certSubject:       "unauthorized.bar.com",
+		cleanExistingCert: false, // Would have been done already.
+		resultChan:        nil,   // Will cause signQueueWorker to only proceed if subject has been authorized.
+	}
+
+	// Ensure signing goroutine has handled the Message.
+	sut.Shutdown()
+
+	// Expect no signing activity took place as evidenced by lack of notifications.
+	if len(notifications) > 0 {
+		t.Error("Queued signing Message for a CSR that lacked authorization resulted in signing activity.")
 	}
 }
 
@@ -171,7 +355,49 @@ func TestHelperPuppetSignOk(t *testing.T) {
 		return
 	}
 
+	expect := "puppet cert sign foo.bar.com"
+	actual := strings.Join(os.Args[3:7], " ")
+	if actual != expect {
+		os.Stderr.WriteString(fmt.Sprintf("Expected arguments %s, got %s\n", expect, actual))
+		os.Exit(2)
+	}
+
+	os.Exit(0)
+}
+func TestHelperPuppetSignFail(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
 	expect := "puppet cert sign"
+	actual := strings.Join(os.Args[3:6], " ")
+	if actual != expect {
+		os.Stderr.WriteString(fmt.Sprintf("Expected arguments %s, got %s\n", expect, actual))
+		os.Exit(2)
+	}
+	os.Stderr.WriteString("Simulated failure in certificate signing")
+	os.Exit(1)
+}
+func TestHelperPuppetSignNoCsr(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	expect := "puppet cert sign"
+	actual := strings.Join(os.Args[3:6], " ")
+	if actual != expect {
+		os.Stderr.WriteString(fmt.Sprintf("Expected arguments %s, got %s\n", expect, actual))
+		os.Exit(2)
+	}
+	os.Stderr.WriteString(fmt.Sprintf("Error: Could not find CSR for: \"%s\".", os.Args[6]))
+	os.Exit(24)
+}
+func TestHelperPuppetRevokeOk(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	expect := "puppet cert clean"
 	actual := strings.Join(os.Args[3:6], " ")
 	if actual != expect {
 		os.Stderr.WriteString(fmt.Sprintf("Expected arguments %s, got %s\n", expect, actual))
