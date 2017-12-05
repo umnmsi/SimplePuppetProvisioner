@@ -14,6 +14,8 @@ type PuppetConfigParser struct {
 
 type PuppetConfig struct {
 	PuppetExecutable string
+	ConfFile         string
+	ConfDir          string
 	SslDir           string
 	CsrDir           string
 	SignedCertDir    string
@@ -79,6 +81,10 @@ func (ctx PuppetConfigParser) parseConfig(configData *bytes.Buffer) {
 				parsedConfig.CsrDir = value
 			case "signeddir":
 				parsedConfig.SignedCertDir = value
+			case "config":
+				parsedConfig.ConfFile = value
+			case "confdir":
+				parsedConfig.ConfDir = value
 			}
 		}
 	}
@@ -89,6 +95,8 @@ func validateParsedConfig(cfg *PuppetConfig) bool {
 	ok = ok && cfg.SslDir != ""
 	ok = ok && cfg.CsrDir != ""
 	ok = ok && cfg.SignedCertDir != ""
+	ok = ok && cfg.ConfFile != ""
+	ok = ok && cfg.ConfDir != ""
 
 	return ok
 }

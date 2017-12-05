@@ -61,6 +61,7 @@ func main() {
 	}
 
 	go server.Start()
+	// server.Start()
 
 	// Wait for a SIGTERM.
 	<-stop

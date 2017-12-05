@@ -62,13 +62,13 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 		}
 	}
 	info := fmt.Sprintf("Provisioning %s", hostname)
-	if environment == "" {
+	if environment != "" {
 		info = info + fmt.Sprintf(" in the %s environment", environment)
 	}
 	ctx.notifier.Notify(fmt.Sprintf("%s...", info))
 
 	// Set up slice for response channels we've been asked to wait on.
-	waitResultChans := make([]reflect.SelectCase, len(waits))
+	waitResultChans := []reflect.SelectCase{}
 
 	var signingResult *certsign.SigningResult
 	if i := tasks.Search("cert"); i < len(tasks) && tasks[i] == "cert" {

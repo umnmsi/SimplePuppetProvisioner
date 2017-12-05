@@ -106,13 +106,15 @@ func (ctx *AppConfig) MoveLoggingToFile() {
 	var logOutput io.Writer
 	var newLocation string
 	if ctx.LogFile != "" {
-		fileOutput, err := os.OpenFile(ctx.LogFile, os.O_APPEND|os.O_CREATE, 0640)
+		fileOutput, err := os.OpenFile(ctx.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 		if err != nil {
 			fmt.Errorf("Unable to create or open logfile: %s\n", err.Error())
 			os.Exit(1)
 		}
-		ctx.logBuffer = bufio.NewWriter(fileOutput)
-		logOutput = ctx.logBuffer
+		// Using a buffer seems like it might theoretically offer performance benefits, but would require a synchronized goroutine to flush it regularly.
+		//ctx.logBuffer = bufio.NewWriter(fileOutput)
+		//logOutput = ctx.logBuffer
+		logOutput = fileOutput
 		newLocation = ctx.LogFile
 	} else {
 		// A null writer
@@ -121,6 +123,7 @@ func (ctx *AppConfig) MoveLoggingToFile() {
 	}
 	ctx.Log.Printf("This log is moving to %s", newLocation)
 	ctx.Log.SetOutput(logOutput)
+	ctx.Log.Printf("--- continuation of logging that began on stdout ---")
 }
 
 func (ctx *AppConfig) FlushLog() {
