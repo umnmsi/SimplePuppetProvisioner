@@ -15,11 +15,13 @@ func TestParser(t *testing.T) {
 	signedCertDir := "/a/b/c"
 	csrDir := "/d/e/f"
 	sslDir := "/g/h/i"
+	config := "/some/puppet.conf"
+	confdir := "/some"
 
 	for datasetId, testData := range parserDataProvider() {
 		sut := NewPuppetConfigParser(testLog)
 		confData.Reset()
-		confData.WriteString(fmt.Sprintf(testData.template, signedCertDir, csrDir, sslDir))
+		confData.WriteString(fmt.Sprintf(testData.template, signedCertDir, csrDir, sslDir, config, confdir))
 		sut.parseConfig(&confData)
 
 		if testData.expectValid {
@@ -53,20 +55,26 @@ func parserDataProvider() []parserTestData {
 			template: `signeddir = %s
 csrdir = %s
 ssldir = %s
+config = %s
+confdir = %s
 `,
 			expectValid: true,
 		},
 		{
 			template: `signeddir = %s
 csrdir = %s
-ssldir = %s`,
+ssldir = %s
+config = %s
+confdir = %s`,
 			expectValid: true,
 		},
 		{
 			template: `signeddir = %s
 garbage = hi
 csrdir = %s
-ssldir = %s`,
+ssldir = %s
+config = %s
+confdir = %s`,
 			expectValid: true,
 		},
 		{

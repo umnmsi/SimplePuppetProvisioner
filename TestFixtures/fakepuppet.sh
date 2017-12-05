@@ -2,4 +2,6 @@
 
 echo "signeddir = a
 csrdir = b
-ssldir = c"
+ssldir = c
+confdir = d
+config = e"
