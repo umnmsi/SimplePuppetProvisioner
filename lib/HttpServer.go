@@ -4,23 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"net/http"
 	"time"
 )
 
 type HttpServer struct {
-	appConfig  AppConfig
-	notifier   *Notifications
-	certSigner *certsign.CertSigner
-	server     http.Server
-	startTime  time.Time
+	appConfig   AppConfig
+	notifier    *Notifications
+	certSigner  *certsign.CertSigner
+	execManager *genericexec.GenericExecManager
+	server      http.Server
+	startTime   time.Time
 }
 
-func NewHttpServer(config AppConfig, notifier *Notifications, certSigner *certsign.CertSigner) *HttpServer {
+func NewHttpServer(config AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *HttpServer {
 	server := new(HttpServer)
 	server.appConfig = config
 	server.notifier = notifier
 	server.certSigner = certSigner
+	server.execManager = execManager
 
 	return server
 }
@@ -43,7 +46,7 @@ func (c *HttpServer) createRoutes(router *http.ServeMux) {
 	protectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig)
 	protectedRoutes := http.NewServeMux()
 
-	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier, c.certSigner)
+	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier, c.certSigner, c.execManager)
 	protectedRoutes.Handle("/provision", provisionHandler)
 
 	// If it didn't match an unprotected route, it goes through the protection middleware.

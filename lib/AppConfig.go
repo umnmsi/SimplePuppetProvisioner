@@ -6,6 +6,7 @@ import (
 
 	"bufio"
 	"github.com/go-chat-bot/bot/irc"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
 	"github.com/spf13/viper"
 	"io"
@@ -21,10 +22,11 @@ type AppConfig struct {
 	PuppetExecutable string
 	PuppetConfDir    string
 	PuppetConfig     *puppetconfig.PuppetConfig
-	Notifications    []*NotificationsConfig
+	GenericExecTasks []*genericexec.GenericExecConfig
 
-	Log       *log.Logger
-	logBuffer *bufio.Writer
+	Notifications []*NotificationsConfig
+	Log           *log.Logger
+	logBuffer     *bufio.Writer
 }
 
 type HttpAuthConfig struct {

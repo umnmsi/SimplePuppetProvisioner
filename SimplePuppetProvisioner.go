@@ -7,6 +7,7 @@ import (
 	"github.com/mbaynton/SimplePuppetProvisioner/interfaces"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"os"
 	"os/signal"
 	"runtime"
@@ -47,7 +48,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := lib.NewHttpServer(appConfig, notifier, certSigner)
+	execManager := genericexec.NewGenericExecManager(makeExecTaskConfigsMap(&appConfig), appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
+
+	server := lib.NewHttpServer(appConfig, notifier, certSigner, execManager)
 
 	if *logStdout == false {
 		appConfig.MoveLoggingToFile()
@@ -76,4 +79,10 @@ func main() {
 
 	appConfig.Log.Println("Process will now exit.")
 	appConfig.FlushLog()
+}
+
+func makeExecTaskConfigsMap(config *lib.AppConfig) map[string]genericexec.GenericExecConfig {
+	theMap := map[string]genericexec.GenericExecConfig{}
+	// TODO
+	return theMap
 }

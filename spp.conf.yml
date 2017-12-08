@@ -12,6 +12,41 @@ PuppetExecutable: /opt/puppetlabs/bin/puppet
 # This defaults to /etc/puppetlabs/puppet which is almost always correct, so should not need to be set here.
 # PuppetConfDir: /etc/puppetlabs/puppet
 
+# You may define any arbitrary commands to be run as tasks here.
+# The Name attribute defines how to reference the command when calling the /provision http API.
+#
+# The Command attribute is the command to be run on the system, relative to the working directory
+# of the process. An exception is that the Command "puppet" will be converted to the value of
+# PuppetExecutable, and the systemwide config file and confdir flags will be added to the arguments.
+#
+# Arguments are passed to the command directly (e.g. not through any shell) in the order you
+# specify them here. Arguments are passed through a template processor that supports accessing
+# any value passed by the client in its http POST body. These may be forwarded on to the command
+# by using a template notation like {{request "nameOfPostValue"}}
+#
+# The optional SuccessMessage and ErrorMessage attributes are templates specifying messages added
+# to the HTTP response json and sent on any configured notification channels. In addition to the
+# http POST values, {{stdout}} and {{stderr}} are available.
+#
+# The optional Reentrant attribute indicates that it is safe to run multiple instances of the
+# command simultaneously (e.g. in the servicing of different API calls received around the same time.)
+# By default the service will only invoke one instance of each Command at a time.
+GenericExecTasks:
+  - Name: environment
+    SuccessMessage: '{{request "hostname"}} added to {{request "environment"}}.'
+    ErrorMessage: 'An error occurred assigning "{{request "hostname"}}" to the "{{request "environment"}}" environment. More info in the log.'
+    Command: scripts/set-environment.sh
+    Args:
+      - '{{request "hostname"}}'
+      - '{{request "environment"}}'
+  - Name: example
+    SuccessMessage: '{{stdout}}'
+    Command: /bin/echo
+    Args:
+      - '-n'
+      - 'Hello, {{request "name"}}'
+    Reentrant: true
+
 Notifications:
   - Type: irc
     IrcConfig:
