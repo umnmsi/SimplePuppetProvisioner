@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"net/http"
 	"reflect"
 	"sort"
@@ -11,13 +12,29 @@ import (
 )
 
 type ProvisionHttpHandler struct {
-	appConfig  *AppConfig
-	notifier   *Notifications
-	certSigner *certsign.CertSigner
+	appConfig             *AppConfig
+	notifier              *Notifications
+	certSigner            *certsign.CertSigner
+	execManager           *genericexec.GenericExecManager
+	execTaskConfigsByName map[string]genericexec.GenericExecConfig
 }
 
-func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner) *ProvisionHttpHandler {
-	handler := ProvisionHttpHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner}
+type TaskResult struct {
+	Complete bool
+	Success  bool
+	Message  string
+}
+
+func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *ProvisionHttpHandler {
+	handler := ProvisionHttpHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner, execManager: execManager}
+
+	execTaskDefns := handler.appConfig.GenericExecTasks
+	execTaskConfigsByName := make(map[string]genericexec.GenericExecConfig, len(execTaskDefns))
+	for _, configuredTask := range execTaskDefns {
+		execTaskConfigsByName[configuredTask.Name] = *configuredTask
+	}
+	handler.execTaskConfigsByName = execTaskConfigsByName
+
 	return &handler
 }
 
@@ -36,6 +53,8 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 		return
 	}
 
+	responseWrapper := map[string]TaskResult{}
+
 	var tasks sort.StringSlice
 	tasks = strings.Split(request.Form.Get("tasks"), ",")
 	tasks.Sort()
@@ -51,6 +70,7 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 
 	var environment = ""
 
+	// Some special treatment for the environment task, which only enables environment-aware notifications.
 	// How you say "contains" in Go...
 	if i := tasks.Search("environment"); i < len(tasks) && tasks[i] == "environment" {
 		environment = request.Form.Get("environment")
@@ -70,7 +90,6 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	// Set up slice for response channels we've been asked to wait on.
 	waitResultChans := []reflect.SelectCase{}
 
-	var signingResult *certsign.SigningResult
 	if i := tasks.Search("cert"); i < len(tasks) && tasks[i] == "cert" {
 		var certRevoke = false
 		if request.Form.Get("cert-revoke") != "" && request.Form.Get("cert-revoke") != "false" {
@@ -84,31 +103,41 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 				Chan: reflect.ValueOf(signingResultChan),
 			})
 		} else {
-			signingResult = &certsign.SigningResult{
-				Success: false,
-				Message: "Certificate signing operation was queued. To see the results in this response, include \"cert\" in the waits list.",
+			responseWrapper["cert"] = TaskResult{
+				Complete: false,
+				Success:  true,
+				Message:  "Certificate signing operation was queued. To see the results in this response, include \"cert\" in the waits list.",
 			}
 		}
-
+		// Remove the cert task from the remaining tasks list.
+		tasks = append(tasks[0:i], tasks[i+1:]...)
 	}
 
-	// TODO: add environment setting here.
-
+	// Process generic exec tasks
+	for _, requestTask := range tasks {
+		if _, isConfigured := ctx.execTaskConfigsByName[requestTask]; isConfigured {
+			ctx.execManager.RunTask(requestTask, &request.Form)
+		} else {
+			responseWrapper[requestTask] = TaskResult{
+				Success:  false,
+				Complete: true,
+				Message:  "Task name is not recognized.",
+			}
+		}
+	}
 	// Wait for all operations we need to wait on
 	waitsComplete := 0
 	for waitsComplete < len(waitResultChans) {
 		_, rvalue, _ := reflect.Select(waitResultChans)
 		switch value := rvalue.Interface().(type) {
 		case certsign.SigningResult:
-			signingResult = &value
+			responseWrapper["cert"] = TaskResult{
+				Complete: true,
+				Success:  value.Success,
+				Message:  value.Message,
+			}
 		}
 		waitsComplete++
-	}
-
-	responseWrapper := struct {
-		cert *certsign.SigningResult `json:cert`
-	}{
-		cert: signingResult,
 	}
 
 	response.Header().Set("Content-Type", "application/json")

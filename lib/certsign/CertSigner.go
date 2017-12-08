@@ -197,9 +197,9 @@ func (ctx *CertSigner) puppetCmdFactory(name string, arg ...string) *exec.Cmd {
 	if name == "puppet" {
 		name = ctx.puppetConfig.PuppetExecutable
 		// Need to pass these for non-root puppet cli to act on puppet master file locations :|
-		orig_arg := arg
-		arg = []string{orig_arg[0], "--config", "/etc/puppetlabs/puppet/puppet.conf", "--confdir", "/etc/puppetlabs/puppet"}
-		arg = append(arg, orig_arg[1:]...)
+		origArg := arg
+		arg = []string{origArg[0], "--config", "/etc/puppetlabs/puppet/puppet.conf", "--confdir", "/etc/puppetlabs/puppet"}
+		arg = append(arg, origArg[1:]...)
 	}
 	cmd := exec.Command(name, arg...)
 	ctx.lastCmdStdout = &bytes.Buffer{}
