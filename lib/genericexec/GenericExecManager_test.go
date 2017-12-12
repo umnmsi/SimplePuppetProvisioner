@@ -2,6 +2,7 @@ package genericexec
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -27,7 +28,7 @@ func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*
 	}
 	sut := NewGenericExecManager(taskConfigs, nil, testLog, mockNotification)
 	if execMocks == nil {
-		execMocks = []string{"TestHelperExit0"}
+		execMocks = []string{"TestHelperExecHandler"}
 	}
 	sut.cmdFactory = func(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error) {
 		// Actually make the executable that is run ourselves, with the first subroutine in execMocks acting as main()
@@ -57,7 +58,144 @@ func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*
 	return sut, testLogBuf, &notificationsPtr
 }
 
-func TestNewGenericExecManager_Successful_Reentrant(t *testing.T) {
+type expectedResult struct {
+	result              *GenericExecResult
+	logExpects          []string
+	notificationExpects []string
+}
+
+func TestGenericExecManager_Successful_Reentrant(t *testing.T) {
+	taskConfigs := map[string]GenericExecConfig{
+		"test": {
+			Name:           "test",
+			Command:        "test",
+			Args:           []string{"{{request \"value1\"}}", "b"},
+			SuccessMessage: "Test command is happy with {{stdout}}",
+			Reentrant:      true,
+		},
+	}
+	expect := expectedResult{
+		result: &GenericExecResult{
+			stdout:  "a b",
+			message: "Test command is happy with a b",
+		},
+		notificationExpects: []string{"Test command is happy with a b"},
+		logExpects:          []string{"Test command is happy with a b"},
+	}
+	genericExecManagerTestCore(t, taskConfigs, "test", url.Values{"value1": []string{"a"}}, expect)
+}
+
+func TestGenericExecManager_Successful_Nonreentrant(t *testing.T) {
+	taskConfigs := map[string]GenericExecConfig{
+		"test": {
+			Name:           "test",
+			Command:        "test",
+			Args:           []string{"{{request \"value1\"}}", "b"},
+			SuccessMessage: "Test command is happy with {{stdout}}",
+			Reentrant:      false,
+		},
+	}
+	expect := expectedResult{
+		result: &GenericExecResult{
+			stdout:  "a b",
+			message: "Test command is happy with a b",
+		},
+		notificationExpects: []string{"Test command is happy with a b"},
+		logExpects:          []string{"Test command is happy with a b"},
+	}
+	genericExecManagerTestCore(t, taskConfigs, "test", url.Values{"value1": []string{"a"}}, expect)
+}
+
+func TestGenericExecManager_Fail_Reentrant(t *testing.T) {
+	taskConfigs := map[string]GenericExecConfig{
+		"test": {
+			Name:           "test",
+			Command:        "fail",
+			Args:           []string{"{{request \"value1\"}}", "b"},
+			SuccessMessage: "Test command is happy with {{stdout}}",
+			ErrorMessage:   "Test command failed. Stderr: {{stderr}}",
+			Reentrant:      true,
+		},
+	}
+	expect := expectedResult{
+		result: &GenericExecResult{
+			stderr:   "a b",
+			exitCode: 2,
+			message:  "Test command failed. Stderr: a b",
+		},
+		notificationExpects: []string{"Test command failed. Stderr: a b"},
+		logExpects:          []string{"Command \"fail a b\" exited 2! On stderr: a b"},
+	}
+	genericExecManagerTestCore(t, taskConfigs, "test", url.Values{"value1": []string{"a"}}, expect)
+}
+
+func TestGenericExecManager_Fail_Nonreentrant(t *testing.T) {
+	taskConfigs := map[string]GenericExecConfig{
+		"test": {
+			Name:           "test",
+			Command:        "fail",
+			Args:           []string{"{{request \"value1\"}}", "b"},
+			SuccessMessage: "Test command is happy with {{stdout}}",
+			ErrorMessage:   "Test command failed. Stderr: {{stderr}}",
+			Reentrant:      false,
+		},
+	}
+	expect := expectedResult{
+		result: &GenericExecResult{
+			stderr:   "a b",
+			exitCode: 2,
+			message:  "Test command failed. Stderr: a b",
+		},
+		notificationExpects: []string{"Test command failed. Stderr: a b"},
+		logExpects:          []string{"Command \"fail a b\" exited 2! On stderr: a b"},
+	}
+	genericExecManagerTestCore(t, taskConfigs, "test", url.Values{"value1": []string{"a"}}, expect)
+}
+
+func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]GenericExecConfig, taskName string, taskArgs TemplateGetter, expect expectedResult) {
+	sut, testLogBuf, notifications := sutFactory(taskConfigs, nil)
+	resultChan := sut.RunTask(taskName, taskArgs)
+	result := <-resultChan
+
+	// Verify result properties
+	if expect.result.stdout != "-" && expect.result.stdout != result.stdout {
+		t.Errorf("Expected stdout \"%s\", got \"%s\"", expect.result.stdout, result.stdout)
+	}
+	if expect.result.stderr != "-" && expect.result.stderr != result.stderr {
+		t.Errorf("Expected stderr \"%s\", got \"%s\"", expect.result.stderr, result.stderr)
+	}
+	if expect.result.message != "-" && expect.result.message != result.message {
+		t.Errorf("Expected result message \"%s\", got \"%s\"", expect.result.message, result.message)
+	}
+	if expect.result.exitCode != result.exitCode {
+		t.Errorf("Expected exit code %d, got %d", 0, result.exitCode)
+	}
+
+	// Verify notifications. This requires a pointer to a pointer so that the value returned from the sutFactory can
+	// be updated by the notification test double callback afterwards.
+	var dereferencedNotifications []string
+	if notifications != nil && *notifications != nil {
+		dereferencedNotifications = **notifications
+	}
+	if len(dereferencedNotifications) != len(expect.notificationExpects) {
+		t.Errorf("Expected %d notifications, got %d", len(expect.notificationExpects), len(dereferencedNotifications))
+	}
+	for i, expectedNotification := range expect.notificationExpects {
+		if dereferencedNotifications[i] != expectedNotification {
+			t.Errorf("Expected notification %d to be \"%s\", got \"%s\"", i+1, expectedNotification, dereferencedNotifications[i])
+		}
+	}
+
+	// Verify log.
+	logStuff := testLogBuf.String()
+	for _, expectedLog := range expect.logExpects {
+		if !strings.Contains(logStuff, expectedLog) {
+			t.Errorf("Log did not contain expected message; expected \"%s\", got \"%s\".", expectedLog, logStuff)
+		}
+	}
+}
+
+func TestNewGenericExecManager_FactoryError(t *testing.T) {
 	taskConfigs := map[string]GenericExecConfig{
 		"test": {
 			Name:           "test",
@@ -68,43 +206,39 @@ func TestNewGenericExecManager_Successful_Reentrant(t *testing.T) {
 		},
 	}
 
-	sut, testLogBuf, notifications := sutFactory(taskConfigs, nil)
+	sut, testLogBuf, _ := sutFactory(taskConfigs, nil)
+	sut.cmdFactory = func(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error) {
+		return nil, errors.New("simulated error")
+	}
+
 	resultChan := sut.RunTask("test", url.Values{"value1": []string{"a"}})
 	result := <-resultChan
 
-	expect := "a b"
-	if result.stdout != expect {
-		t.Errorf("Expected stdout \"%s\", got \"%s\"", expect, result.stdout)
-	}
-	if result.exitCode != 0 {
-		t.Errorf("Expected exit code %d, got %d", 0, result.exitCode)
+	if result.exitCode != 1 {
+		t.Error("Expected exit code 1")
 	}
 
-	expect = "Test command is happy with a b"
-	if result.message != expect {
-		t.Errorf("Expected message \"%s\", got \"%s\"", expect, result.message)
+	if result.stderr != "simulated error" {
+		t.Errorf("Expected result stderr to report %s, got \"%s\"", "simulated error", result.stderr)
 	}
 
 	logStuff := testLogBuf.String()
+	expect := "Could not prepare an executable command from the configuration for task test"
 	if !strings.Contains(logStuff, expect) {
-		t.Errorf("Log did not contain expected success message; expected \"%s\", got \"%s\".", expect, logStuff)
+		t.Errorf("Log did not contain expected error message; expected \"%s\", got \"%s\".", expect, logStuff)
 	}
-
-	if notifications != nil && *notifications != nil {
-		n := **notifications
-		if len(n) == 0 || n[0] != expect {
-			t.Errorf("Expected notification \"%s\" not sent. Notifications: %v", expect, n)
-		}
-	} else {
-		t.Errorf("Expected notification %s, but no notifications found.", expect)
-	}
-
 }
 
 // Mock process exec bodies
-func TestHelperExit0(t *testing.T) {
+func TestHelperExecHandler(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
+	}
+
+	if os.Args[3] == "fail" {
+		// Echo the received arguments on stderr and exit 2
+		fmt.Fprintf(os.Stderr, "%s", strings.Join(os.Args[4:], " "))
+		os.Exit(2)
 	}
 
 	// Echo the received arguments on stdout and exit 0

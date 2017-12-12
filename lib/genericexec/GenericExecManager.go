@@ -94,6 +94,7 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 		ctx.mutexQueues[execConfig.Command] <- mutexQueueMessage{
 			cmd:            cmd,
 			execTaskConfig: &execConfig,
+			requestValues:  argValues,
 			resultChan:     resultChan,
 		}
 	}
@@ -240,11 +241,18 @@ func cmdStringApproximation(cmd *exec.Cmd) string {
 	// Result will likely be shorter than 4k, so one malloc will occur. If we're wrong, the slice will just malloc more.
 	temp := make([]byte, 4096)
 	buffer := bytes.NewBuffer(temp)
+	buffer.Reset()
 
-	buffer.WriteString(cmd.Path)
-	if len(cmd.Args) > 0 {
-		buffer.WriteString(" ")
-		buffer.WriteString(strings.Join(cmd.Args, " "))
+	if cmd.Env[0] == "GO_WANT_HELPER_PROCESS=1" {
+		// For tests.
+		buffer.WriteString(strings.Join(cmd.Args[3:], " "))
+	} else {
+		// For production.
+		buffer.WriteString(cmd.Path)
+		if len(cmd.Args) > 0 {
+			buffer.WriteString(" ")
+			buffer.WriteString(strings.Join(cmd.Args, " "))
+		}
 	}
 
 	return buffer.String()
