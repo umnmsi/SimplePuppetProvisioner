@@ -48,7 +48,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	execManager := genericexec.NewGenericExecManager(makeExecTaskConfigsMap(&appConfig), appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
+	execConfigMap := makeExecTaskConfigsMap(&appConfig)
+	execManager := genericexec.NewGenericExecManager(execConfigMap, appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
 
 	server := lib.NewHttpServer(appConfig, notifier, certSigner, execManager)
 
@@ -82,7 +83,10 @@ func main() {
 }
 
 func makeExecTaskConfigsMap(config *lib.AppConfig) map[string]genericexec.GenericExecConfig {
-	theMap := map[string]genericexec.GenericExecConfig{}
-	// TODO
-	return theMap
+	execTaskDefns := config.GenericExecTasks
+	execTaskConfigsByName := make(map[string]genericexec.GenericExecConfig, len(execTaskDefns))
+	for _, configuredTask := range execTaskDefns {
+		execTaskConfigsByName[configuredTask.Name] = *configuredTask
+	}
+	return execTaskConfigsByName
 }
