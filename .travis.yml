@@ -20,7 +20,6 @@ install:
   - go get -t -v ./...
 
 script:
-  - go install ./...
   - diff -u <(echo -n) <(gofmt -d .)
   - $GOPATH/bin/goveralls -service=travis-ci
 

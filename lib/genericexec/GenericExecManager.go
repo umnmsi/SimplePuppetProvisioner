@@ -76,7 +76,7 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 
 	// Translate task to Cmd.
 	execConfig, found := ctx.execTaskConfigsByName[taskName]
-	if ! found {
+	if !found {
 		panic(fmt.Sprintf("No task configuration for task \"%s\"", taskName))
 	}
 	cmd, err := ctx.cmdFactory(execConfig.Command, argValues, execConfig.Args...)

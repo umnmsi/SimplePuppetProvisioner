@@ -1,5 +1,5 @@
 # Simple Puppet Provisioner
-[![Build Status](https://travis-ci.org/mbaynton/SimplePuppetProvisioner.svg?branch=master)](https://travis-ci.org/mbaynton/SimplePuppetProvisioner)
+[![Build Status](https://travis-ci.org/mbaynton/SimplePuppetProvisioner.svg?branch=master)](https://travis-ci.org/mbaynton/SimplePuppetProvisioner) [![Coverage Status](https://coveralls.io/repos/github/mbaynton/SimplePuppetProvisioner/badge.svg?branch=master)](https://coveralls.io/github/mbaynton/SimplePuppetProvisioner?branch=master)
 
 This software is designed to live on your [Puppet](https://puppet.com/) master to help automate the process of 
 introducing new nodes to your infrastructure. In particular, it currently can help with
