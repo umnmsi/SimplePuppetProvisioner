@@ -45,7 +45,7 @@ The process should shut down cleanly in response to SIGTERMs.
   <tr><td>hostname</td><td>required</td><td>foo.bar.com</td><td>The name of the host to be provisioned, as it will identify itself to puppet.</td></tr>
   <tr><td>tasks</td><td>required</td><td>cert,environment</td><td>Comma-separated list of provisioning operations to perform. Valid operations are the `Name`s defined in the `GenericExecTasks` configuration section, plus the special built-in task name `cert` to cause client certificate signing.</td></tr>
   <tr><td>waits</td><td>optional</td><td>environment</td><td>Comma-separated list of provisioning operations to wait for before the response is sent back. If you need to know the outcome of a provisioning operation, add it to this list and its results will be included in the response.</td></tr>  
-  <tr><td>cert-revoke</td><td>optional</td><td>true</td><td>If set, any existing certificates for the same hostname will be reovked to enable successful signing of a new CSR for this hostname.</td></tr>
+  <tr><td>cert-revoke</td><td>optional</td><td>true</td><td>If set, any existing certificates for the same hostname will be revoked to enable successful signing of a new CSR for this hostname.</td></tr>
 </table>
 
 Requested tasks are assumed to be independent of each other and are run concurrently. If you need

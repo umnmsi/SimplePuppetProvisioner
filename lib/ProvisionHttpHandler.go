@@ -12,11 +12,10 @@ import (
 )
 
 type ProvisionHttpHandler struct {
-	appConfig             *AppConfig
-	notifier              *Notifications
-	certSigner            *certsign.CertSigner
-	execManager           *genericexec.GenericExecManager
-	execTaskConfigsByName map[string]genericexec.GenericExecConfig
+	appConfig   *AppConfig
+	notifier    *Notifications
+	certSigner  *certsign.CertSigner
+	execManager *genericexec.GenericExecManager
 }
 
 type TaskResult struct {
@@ -27,13 +26,6 @@ type TaskResult struct {
 
 func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *ProvisionHttpHandler {
 	handler := ProvisionHttpHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner, execManager: execManager}
-
-	execTaskDefns := handler.appConfig.GenericExecTasks
-	execTaskConfigsByName := make(map[string]genericexec.GenericExecConfig, len(execTaskDefns))
-	for _, configuredTask := range execTaskDefns {
-		execTaskConfigsByName[configuredTask.Name] = *configuredTask
-	}
-	handler.execTaskConfigsByName = execTaskConfigsByName
 
 	return &handler
 }
@@ -115,7 +107,7 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 
 	// Process generic exec tasks
 	for _, requestTask := range tasks {
-		if _, isConfigured := ctx.execTaskConfigsByName[requestTask]; isConfigured {
+		if ctx.execManager.IsTaskConfigured(requestTask) {
 			ctx.execManager.RunTask(requestTask, &request.Form)
 		} else {
 			responseWrapper[requestTask] = TaskResult{

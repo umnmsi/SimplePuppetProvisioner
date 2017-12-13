@@ -71,6 +71,11 @@ func NewGenericExecManager(execTaskConfigsByName map[string]GenericExecConfig, p
 	return &execManager
 }
 
+func (ctx *GenericExecManager) IsTaskConfigured(taskName string) bool {
+	_, found := ctx.execTaskConfigsByName[taskName]
+	return found
+}
+
 func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter) <-chan GenericExecResult {
 	resultChan := make(chan GenericExecResult, 1)
 
@@ -186,7 +191,7 @@ func (ctx *GenericExecManager) mutexQueueConsumer(queue <-chan mutexQueueMessage
 
 func (ctx *GenericExecManager) productionCmdFactory(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error) {
 	// Pass arguments through the template engine.
-	err := renderArgTemplates(arg, argValues)
+	renderedArgs, err := renderArgTemplates(arg, argValues)
 	if err != nil {
 		return nil, err
 	}
@@ -195,30 +200,31 @@ func (ctx *GenericExecManager) productionCmdFactory(name string, argValues Templ
 	if name == "puppet" {
 		name = ctx.puppetConfig.PuppetExecutable
 		// Need to pass these for non-root puppet cli to act on puppet master file locations :|
-		origArg := arg
-		arg = []string{origArg[0], "--config", ctx.puppetConfig.ConfFile, "--confdir", ctx.puppetConfig.ConfDir}
-		arg = append(arg, origArg[1:]...)
+		origArg := renderedArgs
+		renderedArgs = []string{origArg[0], "--config", ctx.puppetConfig.ConfFile, "--confdir", ctx.puppetConfig.ConfDir}
+		renderedArgs = append(renderedArgs, origArg[1:]...)
 	}
 
-	cmd := exec.Command(name, arg...)
+	cmd := exec.Command(name, renderedArgs...)
 	return cmd, nil
 }
 
-func renderArgTemplates(args []string, argValues TemplateGetter) error {
+func renderArgTemplates(args []string, argValues TemplateGetter) ([]string, error) {
 	funcMap := template.FuncMap{
 		"request": argValues.Get,
 	}
+	renderedArgs := make([]string, len(args))
 	for ix, templateString := range args {
 		templateEngine := template.New("args processor").Funcs(funcMap)
 		tmpl, err := templateEngine.Parse(templateString)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var outBuf bytes.Buffer
 		tmpl.Execute(&outBuf, nil)
-		args[ix] = outBuf.String()
+		renderedArgs[ix] = outBuf.String()
 	}
-	return nil
+	return renderedArgs, nil
 }
 
 func renderMessageTemplate(messageTemplate string, values TemplateGetter, stdout *string, stderr *string) (string, error) {
@@ -247,7 +253,7 @@ func cmdStringApproximation(cmd *exec.Cmd) string {
 	buffer := bytes.NewBuffer(temp)
 	buffer.Reset()
 
-	if cmd.Env[0] == "GO_WANT_HELPER_PROCESS=1" {
+	if len(cmd.Env) > 0 && cmd.Env[0] == "GO_WANT_HELPER_PROCESS=1" {
 		// For tests.
 		buffer.WriteString(strings.Join(cmd.Args[3:], " "))
 	} else {
