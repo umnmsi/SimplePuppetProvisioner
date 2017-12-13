@@ -75,7 +75,10 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 	resultChan := make(chan GenericExecResult, 1)
 
 	// Translate task to Cmd.
-	execConfig := ctx.execTaskConfigsByName[taskName]
+	execConfig, found := ctx.execTaskConfigsByName[taskName]
+	if ! found {
+		panic(fmt.Sprintf("No task configuration for task \"%s\"", taskName))
+	}
 	cmd, err := ctx.cmdFactory(execConfig.Command, argValues, execConfig.Args...)
 	if err != nil {
 		resultChan <- GenericExecResult{
@@ -86,6 +89,7 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 		close(resultChan)
 
 		ctx.log.Printf("Could not prepare an executable command from the configuration for task %s: %v", taskName, err)
+		return resultChan
 	}
 
 	if execConfig.Reentrant {
