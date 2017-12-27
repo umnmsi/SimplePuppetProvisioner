@@ -70,14 +70,14 @@ func TestGenericExecManager_Successful_Reentrant(t *testing.T) {
 			Name:           "test",
 			Command:        "test",
 			Args:           []string{"{{request \"value1\"}}", "b"},
-			SuccessMessage: "Test command is happy with {{stdout}}",
+			SuccessMessage: "Test command is happy with {{StdOut}}",
 			Reentrant:      true,
 		},
 	}
 	expect := expectedResult{
 		result: &GenericExecResult{
-			stdout:  "a b",
-			message: "Test command is happy with a b",
+			StdOut:  "a b",
+			Message: "Test command is happy with a b",
 		},
 		notificationExpects: []string{"Test command is happy with a b"},
 		logExpects:          []string{"Test command is happy with a b"},
@@ -91,14 +91,14 @@ func TestGenericExecManager_Successful_Nonreentrant(t *testing.T) {
 			Name:           "test",
 			Command:        "test",
 			Args:           []string{"{{request \"value1\"}}", "b"},
-			SuccessMessage: "Test command is happy with {{stdout}}",
+			SuccessMessage: "Test command is happy with {{StdOut}}",
 			Reentrant:      false,
 		},
 	}
 	expect := expectedResult{
 		result: &GenericExecResult{
-			stdout:  "a b",
-			message: "Test command is happy with a b",
+			StdOut:  "a b",
+			Message: "Test command is happy with a b",
 		},
 		notificationExpects: []string{"Test command is happy with a b"},
 		logExpects:          []string{"Test command is happy with a b"},
@@ -112,19 +112,19 @@ func TestGenericExecManager_Fail_Reentrant(t *testing.T) {
 			Name:           "test",
 			Command:        "fail",
 			Args:           []string{"{{request \"value1\"}}", "b"},
-			SuccessMessage: "Test command is happy with {{stdout}}",
-			ErrorMessage:   "Test command failed. Stderr: {{stderr}}",
+			SuccessMessage: "Test command is happy with {{StdOut}}",
+			ErrorMessage:   "Test command failed. Stderr: {{StdErr}}",
 			Reentrant:      true,
 		},
 	}
 	expect := expectedResult{
 		result: &GenericExecResult{
-			stderr:   "a b",
-			exitCode: 2,
-			message:  "Test command failed. Stderr: a b",
+			StdErr:   "a b",
+			ExitCode: 2,
+			Message:  "Test command failed. Stderr: a b",
 		},
 		notificationExpects: []string{"Test command failed. Stderr: a b"},
-		logExpects:          []string{"Command \"fail a b\" exited 2! On stderr: a b"},
+		logExpects:          []string{"Command \"fail a b\" exited 2! On StdErr: a b"},
 	}
 	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
@@ -135,19 +135,19 @@ func TestGenericExecManager_Fail_Nonreentrant(t *testing.T) {
 			Name:           "test",
 			Command:        "fail",
 			Args:           []string{"{{request \"value1\"}}", "b"},
-			SuccessMessage: "Test command is happy with {{stdout}}",
-			ErrorMessage:   "Test command failed. Stderr: {{stderr}}",
+			SuccessMessage: "Test command is happy with {{StdOut}}",
+			ErrorMessage:   "Test command failed. Stderr: {{StdErr}}",
 			Reentrant:      false,
 		},
 	}
 	expect := expectedResult{
 		result: &GenericExecResult{
-			stderr:   "a b",
-			exitCode: 2,
-			message:  "Test command failed. Stderr: a b",
+			StdErr:   "a b",
+			ExitCode: 2,
+			Message:  "Test command failed. Stderr: a b",
 		},
 		notificationExpects: []string{"Test command failed. Stderr: a b"},
-		logExpects:          []string{"Command \"fail a b\" exited 2! On stderr: a b"},
+		logExpects:          []string{"Command \"fail a b\" exited 2! On StdErr: a b"},
 	}
 	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
@@ -158,16 +158,16 @@ func TestGenericExecManager_reuse(t *testing.T) {
 			Name:           "test-reentrant",
 			Command:        "test",
 			Args:           []string{"{{request \"value1\"}}"},
-			SuccessMessage: "{{stdout}}",
-			ErrorMessage:   "Test command failed. Stderr: {{stderr}}",
+			SuccessMessage: "{{StdOut}}",
+			ErrorMessage:   "Test command failed. Stderr: {{StdErr}}",
 			Reentrant:      true,
 		},
 		"test": {
 			Name:           "test",
 			Command:        "test",
 			Args:           []string{"{{request \"value1\"}}"},
-			SuccessMessage: "{{stdout}}",
-			ErrorMessage:   "Test command failed. Stderr: {{stderr}}",
+			SuccessMessage: "{{StdOut}}",
+			ErrorMessage:   "Test command failed. Stderr: {{StdErr}}",
 			Reentrant:      false,
 		},
 	}
@@ -181,9 +181,9 @@ func TestGenericExecManager_reuse(t *testing.T) {
 		taskArgs[i] = url.Values{"value1": []string{uniqueString}}
 		expects[i] = expectedResult{
 			result: &GenericExecResult{
-				stdout:   uniqueString,
-				exitCode: 0,
-				message:  uniqueString,
+				StdOut:   uniqueString,
+				ExitCode: 0,
+				Message:  uniqueString,
 			},
 			notificationExpects: []string{uniqueString},
 			logExpects:          []string{uniqueString},
@@ -202,17 +202,17 @@ func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]GenericExec
 
 		expect := expectsSlice[i]
 		// Verify result properties
-		if expect.result.stdout != "-" && expect.result.stdout != result.stdout {
-			t.Errorf("Expected stdout \"%s\", got \"%s\"", expect.result.stdout, result.stdout)
+		if expect.result.StdOut != "-" && expect.result.StdOut != result.StdOut {
+			t.Errorf("Expected StdOut \"%s\", got \"%s\"", expect.result.StdOut, result.StdOut)
 		}
-		if expect.result.stderr != "-" && expect.result.stderr != result.stderr {
-			t.Errorf("Expected stderr \"%s\", got \"%s\"", expect.result.stderr, result.stderr)
+		if expect.result.StdErr != "-" && expect.result.StdErr != result.StdErr {
+			t.Errorf("Expected StdErr \"%s\", got \"%s\"", expect.result.StdErr, result.StdErr)
 		}
-		if expect.result.message != "-" && expect.result.message != result.message {
-			t.Errorf("Expected result message \"%s\", got \"%s\"", expect.result.message, result.message)
+		if expect.result.Message != "-" && expect.result.Message != result.Message {
+			t.Errorf("Expected result Message \"%s\", got \"%s\"", expect.result.Message, result.Message)
 		}
-		if expect.result.exitCode != result.exitCode {
-			t.Errorf("Expected exit code %d, got %d", 0, result.exitCode)
+		if expect.result.ExitCode != result.ExitCode {
+			t.Errorf("Expected exit code %d, got %d", 0, result.ExitCode)
 		}
 
 		// Verify notifications. This requires a pointer to a pointer so that the value returned from the sutFactory can
@@ -234,7 +234,7 @@ func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]GenericExec
 		logStuff := testLogBuf.String()
 		for _, expectedLog := range expect.logExpects {
 			if !strings.Contains(logStuff, expectedLog) {
-				t.Errorf("Log did not contain expected message; expected \"%s\", got \"%s\".", expectedLog, logStuff)
+				t.Errorf("Log did not contain expected Message; expected \"%s\", got \"%s\".", expectedLog, logStuff)
 			}
 		}
 
@@ -250,7 +250,7 @@ func TestNewGenericExecManager_FactoryError(t *testing.T) {
 			Name:           "test",
 			Command:        "test",
 			Args:           []string{"{{request \"value1\"}}", "b"},
-			SuccessMessage: "Test command is happy with {{stdout}}",
+			SuccessMessage: "Test command is happy with {{StdOut}}",
 			Reentrant:      true,
 		},
 	}
@@ -263,18 +263,18 @@ func TestNewGenericExecManager_FactoryError(t *testing.T) {
 	resultChan := sut.RunTask("test", url.Values{"value1": []string{"a"}})
 	result := <-resultChan
 
-	if result.exitCode != 1 {
+	if result.ExitCode != 1 {
 		t.Error("Expected exit code 1")
 	}
 
-	if result.stderr != "simulated error" {
-		t.Errorf("Expected result stderr to report %s, got \"%s\"", "simulated error", result.stderr)
+	if result.StdErr != "simulated error" {
+		t.Errorf("Expected result StdErr to report %s, got \"%s\"", "simulated error", result.StdErr)
 	}
 
 	logStuff := testLogBuf.String()
 	expect := "Could not prepare an executable command from the configuration for task test"
 	if !strings.Contains(logStuff, expect) {
-		t.Errorf("Log did not contain expected error message; expected \"%s\", got \"%s\".", expect, logStuff)
+		t.Errorf("Log did not contain expected error Message; expected \"%s\", got \"%s\".", expect, logStuff)
 	}
 }
 
@@ -285,12 +285,12 @@ func TestHelperExecHandler(t *testing.T) {
 	}
 
 	if os.Args[3] == "fail" {
-		// Echo the received arguments on stderr and exit 2
+		// Echo the received arguments on StdErr and exit 2
 		fmt.Fprintf(os.Stderr, "%s", strings.Join(os.Args[4:], " "))
 		os.Exit(2)
 	}
 
-	// Echo the received arguments on stdout and exit 0
+	// Echo the received arguments on StdOut and exit 0
 	fmt.Print(strings.Join(os.Args[4:], " "))
 	os.Exit(0)
 }

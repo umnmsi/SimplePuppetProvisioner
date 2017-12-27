@@ -108,7 +108,13 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	// Process generic exec tasks
 	for _, requestTask := range tasks {
 		if ctx.execManager.IsTaskConfigured(requestTask) {
-			ctx.execManager.RunTask(requestTask, &request.Form)
+			execResultChan := ctx.execManager.RunTask(requestTask, &request.Form)
+			if i := waits.Search(requestTask); i < len(waits) && waits[i] == requestTask {
+				waitResultChans = append(waitResultChans, reflect.SelectCase{
+					Dir:  reflect.SelectRecv,
+					Chan: reflect.ValueOf(execResultChan),
+				})
+			}
 		} else {
 			responseWrapper[requestTask] = TaskResult{
 				Success:  false,
@@ -126,6 +132,12 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 			responseWrapper["cert"] = TaskResult{
 				Complete: true,
 				Success:  value.Success,
+				Message:  value.Message,
+			}
+		case genericexec.GenericExecResult:
+			responseWrapper[value.Name] = TaskResult{
+				Complete: true,
+				Success:  value.ExitCode == 0,
 				Message:  value.Message,
 			}
 		}

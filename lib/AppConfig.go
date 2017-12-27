@@ -23,6 +23,7 @@ type AppConfig struct {
 	PuppetConfDir    string
 	PuppetConfig     *puppetconfig.PuppetConfig
 	GenericExecTasks []*genericexec.GenericExecConfig
+	WebhooksConfig   *WebhooksConfig
 
 	Notifications []*NotificationsConfig
 	Log           *log.Logger
