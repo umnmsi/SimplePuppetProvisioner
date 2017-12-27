@@ -21,6 +21,10 @@ type GenericExecManager struct {
 	cmdFactory func(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error)
 }
 
+type GenericExecManagerInterface interface {
+	RunTask(taskName string, getter TemplateGetter) <-chan GenericExecResult
+}
+
 type GenericExecConfig struct {
 	Name           string
 	Command        string
@@ -31,10 +35,11 @@ type GenericExecConfig struct {
 }
 
 type GenericExecResult struct {
-	exitCode int
-	stdout   string
-	stderr   string
-	message  string
+	Name     string
+	ExitCode int
+	StdOut   string
+	StdErr   string
+	Message  string
 }
 
 type mutexQueueMessage struct {
@@ -87,9 +92,10 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 	cmd, err := ctx.cmdFactory(execConfig.Command, argValues, execConfig.Args...)
 	if err != nil {
 		resultChan <- GenericExecResult{
-			exitCode: 1,
-			stdout:   "",
-			stderr:   err.Error(),
+			Name:     taskName,
+			ExitCode: 1,
+			StdOut:   "",
+			StdErr:   err.Error(),
 		}
 		close(resultChan)
 
@@ -118,31 +124,31 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 	cmd.Stdout = outBuffer
 	cmd.Stderr = errBuffer
 
-	result := GenericExecResult{}
+	result := GenericExecResult{Name: execConfig.Name}
 	err := cmd.Run()
-	result.stderr = errBuffer.String()
+	result.StdErr = errBuffer.String()
 	errBuffer.Truncate(0)
-	result.stdout = outBuffer.String()
+	result.StdOut = outBuffer.String()
 	outBuffer.Truncate(0)
 	if err != nil {
-		result.exitCode = 1
+		result.ExitCode = 1
 		// It takes two(!) type assertions to get at the exit code.
 		if exitErr, isExitErr := err.(*exec.ExitError); isExitErr {
 			if waitStatus, isWaitStatus := exitErr.Sys().(syscall.WaitStatus); isWaitStatus {
-				result.exitCode = waitStatus.ExitStatus()
+				result.ExitCode = waitStatus.ExitStatus()
 			}
 		}
 	} else {
-		result.exitCode = 0
+		result.ExitCode = 0
 	}
 
 	// Send notifications if configured, and log.
 	var logMsg, notificationMsg string
-	if result.exitCode == 0 {
+	if result.ExitCode == 0 {
 		if execConfig.SuccessMessage != "" {
-			logMsg, err = renderMessageTemplate(execConfig.SuccessMessage, templateValues, &result.stdout, &result.stderr)
+			logMsg, err = renderMessageTemplate(execConfig.SuccessMessage, templateValues, &result.StdOut, &result.StdErr)
 			if err != nil {
-				logMsg = fmt.Sprintf("Command \"%s\" exited 0. However, an error occurred processing the success message template: %v", cmdStringApproximation(cmd), err)
+				logMsg = fmt.Sprintf("Command \"%s\" exited 0. However, an error occurred processing the success Message template: %v", cmdStringApproximation(cmd), err)
 			} else {
 				notificationMsg = logMsg
 			}
@@ -151,21 +157,21 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 			logMsg = fmt.Sprintf("Command \"%s\" exited 0.", cmdStringApproximation(cmd))
 		}
 	} else {
-		if len(result.stdout) == 0 && len(result.stderr) == 0 {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d!", cmdStringApproximation(cmd), result.exitCode)
-		} else if len(result.stdout) == 0 {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On stderr: %s", cmdStringApproximation(cmd), result.exitCode, result.stderr)
-		} else if len(result.stderr) == 0 {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On stdout: %s", cmdStringApproximation(cmd), result.exitCode, result.stdout)
+		if len(result.StdOut) == 0 && len(result.StdErr) == 0 {
+			logMsg = fmt.Sprintf("Command \"%s\" exited %d!", cmdStringApproximation(cmd), result.ExitCode)
+		} else if len(result.StdOut) == 0 {
+			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On StdErr: %s", cmdStringApproximation(cmd), result.ExitCode, result.StdErr)
+		} else if len(result.StdErr) == 0 {
+			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On StdOut: %s", cmdStringApproximation(cmd), result.ExitCode, result.StdOut)
 		} else {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On stdout: %s\nOn stderr: %s", cmdStringApproximation(cmd), result.exitCode, result.stdout, result.stderr)
+			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On StdOut: %s\nOn StdErr: %s", cmdStringApproximation(cmd), result.ExitCode, result.StdOut, result.StdErr)
 		}
 
 		if execConfig.ErrorMessage != "" {
-			notificationMsg, err = renderMessageTemplate(execConfig.ErrorMessage, templateValues, &result.stdout, &result.stderr)
+			notificationMsg, err = renderMessageTemplate(execConfig.ErrorMessage, templateValues, &result.StdOut, &result.StdErr)
 			if err != nil {
 				notificationMsg = ""
-				logMsg = logMsg + fmt.Sprintf("Additionally, an error occurred processing the error message template: %v", err)
+				logMsg = logMsg + fmt.Sprintf("Additionally, an error occurred processing the error Message template: %v", err)
 			}
 		}
 	}
@@ -176,7 +182,7 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 
 	if notificationMsg != "" {
 		ctx.notifyCallback(notificationMsg)
-		result.message = notificationMsg
+		result.Message = notificationMsg
 	}
 
 	resultChan <- result
@@ -230,14 +236,14 @@ func renderArgTemplates(args []string, argValues TemplateGetter) ([]string, erro
 func renderMessageTemplate(messageTemplate string, values TemplateGetter, stdout *string, stderr *string) (string, error) {
 	funcMap := template.FuncMap{
 		"request": values.Get,
-		"stdout": func() string {
+		"StdOut": func() string {
 			return *stdout
 		},
-		"stderr": func() string {
+		"StdErr": func() string {
 			return *stderr
 		},
 	}
-	templateEngine := template.New("message processor").Funcs(funcMap)
+	templateEngine := template.New("Message processor").Funcs(funcMap)
 	tmpl, err := templateEngine.Parse(messageTemplate)
 	if err != nil {
 		return "", err

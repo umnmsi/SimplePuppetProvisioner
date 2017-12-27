@@ -1,21 +1,40 @@
 # Simple Puppet Provisioner
 [![Build Status](https://travis-ci.org/mbaynton/SimplePuppetProvisioner.svg?branch=master)](https://travis-ci.org/mbaynton/SimplePuppetProvisioner) [![Coverage Status](https://coveralls.io/repos/github/mbaynton/SimplePuppetProvisioner/badge.svg?branch=master)](https://coveralls.io/github/mbaynton/SimplePuppetProvisioner?branch=master)
 
-This software is designed to live on your [Puppet](https://puppet.com/) master to help automate the process of 
-introducing new nodes to your infrastructure. In particular, it currently can help with
-  * Signing agent certificates with a degree of security greater than turning on auto-signing.
-  * Informing an [ENC](https://puppet.com/docs/puppet/5.3/nodes_external.html#what-is-an-enc) which puppet environment a new hostname should get placed in.
+This software is designed to live on your [Puppet](https://puppet.com/) master to automate some routine tasks:
+  * It can listen for github webooks and run [r10k](https://puppet.com/docs/pe/2017.3/code_management/r10k.html) so your puppet manifests stay up-to-date with your git repositories.
+    Some configurability is provided to run alternative commands in response to received webhooks, for example to
+    also rsync changes to additional compile masters. It's basically a subset of functionality offered by [webhook](https://github.com/adnanh/webhook),
+    but does not require you to run two services.
+     
+  * It can listen for requests sent during the first boot of new nodes in your infrastructure, and
+      * Sign agent certificates for new nodes with a degree of security greater than turning on auto-signing. This task
+        gets special treatment to handle the case / race condition where the first puppet run on the new node has not
+        yet sent its certificate to the master. In that case, this software will watch for the certificate
+        signing request to arrive from the agent and sign it as soon as it is available.
+      * Run additional scripts or commands through an extensive, templatized invocation system. This can be used to 
+        perform any custom actions your environment dictates for introduction of new nodes at your site. For example,
+        this is used at [MSI](https://www.msi.umn.edu/) to inform a simple [ENC](https://puppet.com/docs/puppet/5.3/nodes_external.html#what-is-an-enc)
+        which puppet environment the new node should get placed in.
 
-It does this by offering a simple authenticated HTTP API that new nodes may call out to during their first boot.
-You could interact with this service through `curl`, for example:
+    The premise for the "first-boot" listener is that you either directly configure your trusted system images to run 
+    something like a `curl` call to this service on first boot, or have another provisioning system like cloud-init 
+    kick off a request to this software. This software supports several methods of HTTP authentication to verify that
+    the request is trustworthy. When it receives an authenticated request, it will sign the certificate and/or run
+    commands.
+
+If you use IRC or Slack, you can configure the software to send notifications to those platforms as it goes about its
+tasks.
+
+## Example `curl` call
+This example call to the service using `curl` will cause the puppet master to sign a CSR for the host "newnode.my.org"
+(immediately if the agent has already submitted it, or when it arrives otherwise), and some custom command from the 
+configuration file called "environment" to be run as well. It will also submit some HTTP authentication credentials
+using the digest method.
 ```bash
-$ curl https://puppet.my.org:8240/provision -d hostname=newnode.my.org -d tasks=cert,environment -d wait=environment \
--d environment=production --digest --user provision-user:SomeSuperSecretPassword  
+$ curl http://puppet.my.org:8240/provision -d hostname=newnode.my.org -d tasks=cert,environment \
+--digest --user provision-user:SomeSuperSecretPassword  
 ```
-The premise is that you either configure your base system images to run something like the above on
-first boot, or add it to a provisioning system like cloud-init. When the Simple Puppet Provisioner software
-receives an authenticated request, it will sign the certificate and/or set the environment for that
-node.
 
 ## Requirements
 The service is a statically-linked binary, so external dependencies / environmental requirements are minimal.
@@ -35,7 +54,7 @@ It does not daemonize, so write initscripts accordingly.
 
 The process should shut down cleanly in response to SIGTERMs.
 
-## HTTP API
+## HTTP API Reference
 ### /provision
 #### Request
 **Method: POST**  

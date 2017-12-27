@@ -49,6 +49,11 @@ func main() {
 	}
 
 	execConfigMap := makeExecTaskConfigsMap(&appConfig)
+	if appConfig.WebhooksConfig.EnableStandardR10kListener {
+		appConfig.WebhooksConfig.Listeners = append(appConfig.WebhooksConfig.Listeners, lib.StandardR10kListenerConfig(appConfig.WebhooksConfig))
+	}
+	lib.SetWebhookExecTaskConfigMap(appConfig.WebhooksConfig, execConfigMap)
+
 	execManager := genericexec.NewGenericExecManager(execConfigMap, appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
 
 	server := lib.NewHttpServer(appConfig, notifier, certSigner, execManager)

@@ -12,7 +12,7 @@ PuppetExecutable: /opt/puppetlabs/bin/puppet
 # This defaults to /etc/puppetlabs/puppet which is almost always correct, so should not need to be set here.
 # PuppetConfDir: /etc/puppetlabs/puppet
 
-# You may define any arbitrary commands to be run as tasks here.
+# You may define any arbitrary commands to be run as tasks here during node provisioning.
 # The Name attribute defines how to reference the command when calling the /provision http API.
 #
 # The Command attribute is the command to be run on the system, relative to the working directory
@@ -34,7 +34,7 @@ PuppetExecutable: /opt/puppetlabs/bin/puppet
 GenericExecTasks:
   - Name: environment
     SuccessMessage: '{{request "hostname"}} added to {{request "environment"}}.'
-    ErrorMessage: 'An error occurred assigning "{{request "hostname"}}" to the "{{request "environment"}}" environment. More info in the log.'
+    ErrorMessage: 'ERROR assigning "{{request "hostname"}}" to the "{{request "environment"}}" environment. More info in the log.'
     Command: scripts/set-environment.sh
     Args:
       - '{{request "hostname"}}'
@@ -46,6 +46,18 @@ GenericExecTasks:
       - '-n'
       - 'Hello, {{request "name"}}'
     Reentrant: true
+
+GithubWebhooks:
+  Secret: asdf
+  EnableStandardR10kListener: true
+  R10kExecutable: /opt/puppetlabs/puppet/bin/r10k
+  Listeners:
+    - Event: push
+      ExecConfig:
+        - Name: custom sync example
+          SuccessMessage: 'Commit {{request "$.ref"}} has been synchronized to all compile masters.'
+          ErrorMessage: 'ERROR synchronizing commit {{request "$.ref}}: {{stderr}}'
+          Command: scripts/r10k-rsync.sh
 
 Notifications:
   - Type: irc
