@@ -23,7 +23,7 @@ type AppConfig struct {
 	PuppetConfDir    string
 	PuppetConfig     *puppetconfig.PuppetConfig
 	GenericExecTasks []*genericexec.GenericExecConfig
-	WebhooksConfig   *WebhooksConfig
+	GithubWebhooks   *WebhooksConfig
 
 	Notifications []*NotificationsConfig
 	Log           *log.Logger
@@ -97,6 +97,13 @@ func (ctx *AppConfig) setDefaults() {
 			ctx.PuppetConfDir = "C:\\ProgramData\\PuppetLabs\\puppet\\etc"
 		} else {
 			ctx.PuppetConfDir = "/etc/puppetlabs/puppet"
+		}
+	}
+
+	if ctx.GithubWebhooks == nil {
+		ctx.GithubWebhooks = &WebhooksConfig{
+			EnableStandardR10kListener: false,
+			Listeners:                  make([]ExecListener, 0),
 		}
 	}
 }
