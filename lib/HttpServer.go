@@ -43,7 +43,7 @@ func (c *HttpServer) Shutdown(ctx context.Context) error {
 func (c *HttpServer) createRoutes(router *http.ServeMux) {
 	router.Handle("/stats", http.HandlerFunc(c.internalStatsHandler))
 
-	router.Handle("/webhook", NewGithubWebhookHttpHandler(c.appConfig.WebhooksConfig, c.execManager, c.appConfig.Log))
+	router.Handle("/webhook", NewGithubWebhookHttpHandler(c.appConfig.GithubWebhooks, c.execManager, c.appConfig.Log))
 
 	protectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig)
 	protectedRoutes := http.NewServeMux()

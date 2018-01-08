@@ -49,10 +49,10 @@ func main() {
 	}
 
 	execConfigMap := makeExecTaskConfigsMap(&appConfig)
-	if appConfig.WebhooksConfig.EnableStandardR10kListener {
-		appConfig.WebhooksConfig.Listeners = append(appConfig.WebhooksConfig.Listeners, lib.StandardR10kListenerConfig(appConfig.WebhooksConfig))
+	if appConfig.GithubWebhooks.EnableStandardR10kListener {
+		appConfig.GithubWebhooks.Listeners = append(appConfig.GithubWebhooks.Listeners, lib.StandardR10kListenerConfig(appConfig.GithubWebhooks))
 	}
-	lib.SetWebhookExecTaskConfigMap(appConfig.WebhooksConfig, execConfigMap)
+	lib.SetWebhookExecTaskConfigMap(appConfig.GithubWebhooks, execConfigMap)
 
 	execManager := genericexec.NewGenericExecManager(execConfigMap, appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
 
