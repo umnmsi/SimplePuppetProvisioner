@@ -45,7 +45,15 @@ That said,
   * Any other tools you set up to run through `GenericExecTasks` must be installed (of course).
 
 ## Installation
-  * TBD (should provide precompiled releases.)
+If the precompiled binary runs on your platform, you can simply
+  * Download the `SimplePuppetProvisioner` binary from the [latest release](https://github.com/mbaynton/SimplePuppetProvisioner/releases).
+  * Create a configuration file for it. The [reference config file](https://github.com/mbaynton/SimplePuppetProvisioner/blob/master/spp.conf.yml)
+    is a good starting point.
+  * Done!
+
+Precompiled binaries are currently being provided for Linux x86-64. If you need to run it on another platform,
+install the [GoLang 1.8+ tools](https://golang.org/doc/install#install), place this git repository under your `GOPATH`,
+and `go install` it.
 
 ## Starting and Stopping
 The process can typically be started simply by executing it with no arguments. It should be run as the same
