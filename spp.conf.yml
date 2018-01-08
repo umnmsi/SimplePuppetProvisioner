@@ -54,10 +54,10 @@ GithubWebhooks:
   Listeners:
     - Event: push
       ExecConfig:
-        - Name: custom sync example
-          SuccessMessage: 'Commit {{request "$.ref"}} has been synchronized to all compile masters.'
-          ErrorMessage: 'ERROR synchronizing commit {{request "$.ref}}: {{stderr}}'
-          Command: scripts/r10k-rsync.sh
+        Name: custom sync example
+        SuccessMessage: '"{{request "$.head_commit.message" | printf "%.25s"}}{{ if gt (request "$.head_commit.message" | len) 25}}...{{end}}" by {{request "$.head_commit.author.username"}} in {{request "$.repository.name"}}:{{request "$.ref"}} has been synchronized to all compile masters.'
+        ErrorMessage: 'ERROR synchronizing commit {{request "$.ref"}}: {{stderr}}'
+        Command: scripts/r10k-rsync.sh
 
 Notifications:
   - Type: irc
