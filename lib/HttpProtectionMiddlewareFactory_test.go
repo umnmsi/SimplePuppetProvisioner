@@ -53,6 +53,24 @@ func TestNoAuthConfigResultsInNoAuthenticationRequired(t *testing.T) {
 	}
 }
 
+func TestValidAuthResultsInProperlyServedResponse(t *testing.T) {
+	appConfig := LoadTheConfig("NoRealm.conf", []string{"../TestFixtures/configs"})
+	sut := NewHttpProtectionMiddlewareFactory(appConfig)
+	var called = false
+	testHandler := func(response http.ResponseWriter, request *http.Request) {
+		called = true
+	}
+	protectedHandler := sut.WrapInProtectionMiddleware(http.HandlerFunc(testHandler))
+	testRequest, _ := http.NewRequest("POST", "http://0.0.0.0/", strings.NewReader(""))
+	testRequest.SetBasicAuth("test", "password")
+	monitor := httptest.NewRecorder()
+	protectedHandler.ServeHTTP(monitor, testRequest)
+
+	if monitor.Code != 200 || called == false {
+		t.Errorf("Enabled http authentication middleware did not allow properly authenticated request through (HTTP %d).\n", monitor.Code)
+	}
+}
+
 func expectMiddlewareThrows(sut HttpProtectionMiddlewareFactory, t *testing.T, expect string) {
 	defer func() {
 		err := recover()
