@@ -22,7 +22,7 @@ func NewHttpProtectionMiddlewareFactory(config AppConfig) HttpProtectionMiddlewa
 	return *handler
 }
 
-func (ctx HttpProtectionMiddlewareFactory) WrapInProtectionMiddleware(nestedHandler http.Handler) http.Handler {
+func (ctx *HttpProtectionMiddlewareFactory) WrapInProtectionMiddleware(nestedHandler http.Handler) http.Handler {
 	authConfig := ctx.config.HttpAuth
 	if authConfig == nil { // No authentication required.
 		return nestedHandler
@@ -48,11 +48,11 @@ func (ctx HttpProtectionMiddlewareFactory) WrapInProtectionMiddleware(nestedHand
 	}
 }
 
-func (ctx HttpProtectionMiddlewareFactory) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (ctx *HttpProtectionMiddlewareFactory) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	ctx.protectingMiddleware.ServeHTTP(response, request)
 }
 
 // This func exists just because it provides the signature the authenticator.Wrap method is looking for.
-func (ctx HttpProtectionMiddlewareFactory) handle(w http.ResponseWriter, request *auth.AuthenticatedRequest) {
+func (ctx *HttpProtectionMiddlewareFactory) handle(w http.ResponseWriter, request *auth.AuthenticatedRequest) {
 	ctx.protectedHandler.ServeHTTP(w, &request.Request)
 }
