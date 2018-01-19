@@ -26,7 +26,7 @@ PuppetExecutable: /opt/puppetlabs/bin/puppet
 #
 # The optional SuccessMessage and ErrorMessage attributes are templates specifying messages added
 # to the HTTP response json and sent on any configured notification channels. In addition to the
-# http POST values, {{stdout}} and {{stderr}} are available.
+# http POST values, {{StdOut}} and {{StdErr}} are available.
 #
 # The optional Reentrant attribute indicates that it is safe to run multiple instances of the
 # command simultaneously (e.g. in the servicing of different API calls received around the same time.)
@@ -40,7 +40,7 @@ GenericExecTasks:
       - '{{request "hostname"}}'
       - '{{request "environment"}}'
   - Name: example
-    SuccessMessage: '{{stdout}}'
+    SuccessMessage: '{{StdOut}}'
     Command: /bin/echo
     Args:
       - '-n'
@@ -56,7 +56,7 @@ GithubWebhooks:
       ExecConfig:
         Name: custom sync example
         SuccessMessage: '"{{request "$.head_commit.message" | printf "%.25s"}}{{ if gt (request "$.head_commit.message" | len) 25}}...{{end}}" by {{request "$.head_commit.author.username"}} in {{request "$.repository.name"}}:{{request "$.ref"}} has been synchronized to all compile masters.'
-        ErrorMessage: 'ERROR synchronizing commit {{request "$.ref"}}: {{stderr}}'
+        ErrorMessage: 'ERROR synchronizing commit {{request "$.ref"}}: {{StdErr}}'
         Command: scripts/r10k-rsync.sh
 
 Notifications:

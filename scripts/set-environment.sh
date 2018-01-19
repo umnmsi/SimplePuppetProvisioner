@@ -21,10 +21,11 @@ fi
 
 cd $LOCAL_CLONE
 
-git pull
-echo "environment: $ENVIRONMENT" > "$HOSTNAME.yml"
-git add "$HOSTNAME.yml"
-git commit -m "environment: $ENVIRONMENT (automated commit for $HOSTNAME)"
-git push
+git pull > /dev/null
+echo "environment: $ENVIRONMENT" > "$HOSTNAME.yaml"
+git diff --quiet $HOSTNAME.yaml && echo -n "$HOSTNAME already in $ENVIRONMENT" && exit 0
+git add "$HOSTNAME.yaml" > /dev/null
+git commit -m "environment: $ENVIRONMENT (automated commit for $HOSTNAME)" > /dev/null
+git push > /dev/null
 
-echo "Done."
+echo -n "$HOSTNAME added to $ENVIRONMENT"
