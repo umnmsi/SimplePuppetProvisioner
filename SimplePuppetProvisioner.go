@@ -66,7 +66,7 @@ func main() {
 	if runtime.GOOS == "windows" {
 		signal.Notify(stop, os.Interrupt)
 	} else {
-		signal.Notify(stop, syscall.SIGTERM)
+		signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 	}
 
 	go server.Start()
