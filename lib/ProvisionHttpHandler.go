@@ -127,9 +127,9 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	waitsComplete := 0
 	for waitsComplete < len(waitResultChans) {
 		chosen, rvalue, ok := reflect.Select(waitResultChans)
-		if ! ok {
+		if !ok {
 			waitResultChans[chosen].Chan = reflect.ValueOf(nil)
-			continue;
+			continue
 		}
 		switch value := rvalue.Interface().(type) {
 		case certsign.SigningResult:
