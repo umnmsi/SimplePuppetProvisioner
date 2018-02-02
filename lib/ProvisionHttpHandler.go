@@ -126,7 +126,11 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	// Wait for all operations we need to wait on
 	waitsComplete := 0
 	for waitsComplete < len(waitResultChans) {
-		_, rvalue, _ := reflect.Select(waitResultChans)
+		chosen, rvalue, ok := reflect.Select(waitResultChans)
+		if ! ok {
+			waitResultChans[chosen].Chan = reflect.ValueOf(nil)
+			continue;
+		}
 		switch value := rvalue.Interface().(type) {
 		case certsign.SigningResult:
 			responseWrapper["cert"] = TaskResult{
