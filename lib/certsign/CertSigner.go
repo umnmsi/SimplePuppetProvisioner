@@ -15,6 +15,7 @@ import (
 
 type signChanMessage struct {
 	certSubject       string
+	signCSR           bool
 	cleanExistingCert bool
 	resultChan        chan<- SigningResult
 }
@@ -30,11 +31,13 @@ type CertSigner struct {
 	lastCmdStderr          *bytes.Buffer
 	authorizedCertSubjects *map[string]chan<- SigningResult // Not synchronized as it is currently only touched in
 	csrWatcher             *interfaces.FsnotifyWatcher
+	stoppedCsrWatcher      chan struct{}
 	openFileFunc           func(name string, flag int, perm os.FileMode) (*os.File, error)
 	notifyCallback         func(message string)
 }
 
 type SigningResult struct {
+	Action  string
 	Success bool
 	Message string
 }
@@ -44,6 +47,7 @@ func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watc
 
 	certSigner.signQueue = make(chan signChanMessage, 50)
 	certSigner.stoppedChan = make(chan struct{}, 1)
+	certSigner.stoppedCsrWatcher = make(chan struct{}, 1)
 	certSigner.cmdFactory = certSigner.puppetCmdFactory
 	temp := make(map[string]chan<- SigningResult, 15)
 	certSigner.authorizedCertSubjects = &temp
@@ -66,16 +70,40 @@ func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watc
 	return &certSigner, err
 }
 
-func (ctx *CertSigner) Sign(hostname string, cleanExistingCert bool) <-chan SigningResult {
+func (ctx *CertSigner) Clean(hostname string) <-chan SigningResult {
 	resultChan := make(chan SigningResult, 1)
 	if ctx.stopped {
-		resultChan <- SigningResult{Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
+		resultChan <- SigningResult{Action: "revoke", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
 		close(resultChan)
 		return resultChan
 	}
 
 	ctx.signQueue <- signChanMessage{
 		certSubject:       hostname,
+		signCSR:           false,
+		cleanExistingCert: true,
+		resultChan:        resultChan,
+	}
+
+	return resultChan
+}
+
+// SigningResult channel will receive two messages if cleanExistingCert is true -
+// one when cert is cleaned and one when cert is signed
+func (ctx *CertSigner) Sign(hostname string, cleanExistingCert bool) <-chan SigningResult {
+	resultChan := make(chan SigningResult, 3)
+	if ctx.stopped {
+		if cleanExistingCert {
+			resultChan <- SigningResult{Action: "revoke", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
+		}
+		resultChan <- SigningResult{Action: "sign", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
+		close(resultChan)
+		return resultChan
+	}
+
+	ctx.signQueue <- signChanMessage{
+		certSubject:       hostname,
+		signCSR:           true,
 		cleanExistingCert: cleanExistingCert,
 		resultChan:        resultChan,
 	}
@@ -90,26 +118,13 @@ func (ctx *CertSigner) ProcessingBacklogLength() int {
 func (ctx *CertSigner) Shutdown() {
 	ctx.stopped = true
 	ctx.csrWatcher.Close()
-	close(ctx.signQueue)
+	ctx.stoppedCsrWatcher <- struct{}{}
 	<-ctx.stoppedChan
 }
 
 func (ctx *CertSigner) signQueueWorker() {
 	for message, opened := <-ctx.signQueue; opened; message, opened = <-ctx.signQueue {
-		temp := *ctx.authorizedCertSubjects
-		if message.resultChan != nil {
-			// This request came from an external caller.
-			// Authorize this certificate subject for signing if it pops up as a CSR later.
-			temp[message.certSubject] = message.resultChan
-		} else {
-			// This request came from the CSR watcher.
-			// We'll only process this Message if it is for a preauthorized subject with an available result channel.
-			_, present := temp[message.certSubject]
-			if !present {
-				continue
-			}
-		}
-
+		ctx.log.Printf("signQueueWorker: %#v\n", message)
 		certExists := false
 		existingCertPath := fmt.Sprintf("%s/%s.pem", ctx.puppetConfig.SignedCertDir, message.certSubject)
 		fh, _ := ctx.openFileFunc(existingCertPath, os.O_RDONLY, 0660)
@@ -117,6 +132,7 @@ func (ctx *CertSigner) signQueueWorker() {
 			fh.Close()
 			certExists = true
 		}
+
 		// Revoke existing certificate if present and requested.
 		if message.cleanExistingCert {
 			if certExists { // Looks like there's a cert to revoke.
@@ -129,41 +145,68 @@ func (ctx *CertSigner) signQueueWorker() {
 					// but instead of giving up now let's let the actual puppet CA be the authority on what
 					// it can sign.
 					ctx.log.Printf("Revocation of %s failed. *** Stdout:\n%s\n*** Stderr:\n%s\n", message.certSubject, ctx.lastCmdStdout.String(), ctx.lastCmdStderr.String())
+					ctx.actionDone("revoke", message, false, fmt.Sprintf("Revocation of %s failed.", message.certSubject))
 				} else {
-					ctx.notify(fmt.Sprintf("An existing certificate for %s was revoked to make way for the new certificate.", message.certSubject))
+					var info string
+					if message.signCSR {
+						info = fmt.Sprintf("An existing certificate for %s was revoked to make way for the new certificate.", message.certSubject)
+					} else {
+						info = fmt.Sprintf("Existing certificate for %s was revoked.", message.certSubject)
+					}
+					ctx.notify(info)
 					ctx.log.Printf("Revoked %s.\n", message.certSubject)
+					ctx.actionDone("revoke", message, true, info)
+					certExists = false
 				}
-				certExists = false
+			} else {
+				ctx.log.Printf("No existing certificate found for %s\n", message.certSubject)
+				ctx.actionDone("revoke", message, true, fmt.Sprintf("No existing certificate for %s to revoke.", message.certSubject))
 			}
 		}
 
-		// Try to sign the certificate.
-		// puppet cert sign appears to exit 0 on successfully signed, nonzero otherwise.
-		signCmd := ctx.cmdFactory("puppet", "cert", "sign", message.certSubject)
-		err := signCmd.Run()
-		if err != nil {
-			// If it was because the cert is not present, the CSR watcher will get it later.
-			stderr := ctx.lastCmdStderr.String()
-			if strings.Contains(stderr, fmt.Sprintf("Could not find CSR for: \"%s\"", message.certSubject)) {
-				info := fmt.Sprintf("Certificate for \"%s\" will be signed when a matching CSR arrives.", message.certSubject)
-				ctx.notify(info)
-				ctx.log.Printf("%s\n", info)
+		if message.signCSR {
+			temp := *ctx.authorizedCertSubjects
+			if message.resultChan != nil {
+				// This request came from an external caller.
+				// Authorize this certificate subject for signing if it pops up as a CSR later.
+				temp[message.certSubject] = message.resultChan
 			} else {
-				ctx.log.Printf("Certificate signing for %s failed. *** Stdout:\n%s\n*** Stderr:\n%s\n", message.certSubject, ctx.lastCmdStdout.String(), stderr)
-				var info string
-				if certExists {
-					info = "Certificate signing for %s failed -- looks like there's already a signed cert for that host, and revocation was not requested."
-				} else {
-					info = "Certificate signing for \"%s\" failed! More info in log."
+				// This request came from the CSR watcher.
+				// We'll only process this Message if it is for a preauthorized subject with an available result channel.
+				_, present := temp[message.certSubject]
+				if !present {
+					continue
 				}
-				ctx.notify(fmt.Sprintf(info, message.certSubject))
-				ctx.signingDone(message.certSubject, false, fmt.Sprintf(info, message.certSubject))
 			}
-		} else {
-			info := fmt.Sprintf("Certificate for \"%s\" has been signed.", message.certSubject)
-			ctx.notify(info)
-			ctx.log.Println(info)
-			ctx.signingDone(message.certSubject, true, info)
+
+			// Try to sign the certificate.
+			// puppet cert sign appears to exit 0 on successfully signed, nonzero otherwise.
+			signCmd := ctx.cmdFactory("puppet", "cert", "sign", message.certSubject)
+			err := signCmd.Run()
+			if err != nil {
+				// If it was because the cert is not present, the CSR watcher will get it later.
+				stderr := ctx.lastCmdStderr.String()
+				if strings.Contains(stderr, fmt.Sprintf("Could not find CSR for: \"%s\"", message.certSubject)) {
+					info := fmt.Sprintf("Certificate for \"%s\" will be signed when a matching CSR arrives.", message.certSubject)
+					ctx.notify(info)
+					ctx.log.Printf("%s\n", info)
+				} else {
+					ctx.log.Printf("Certificate signing for %s failed. *** Stdout:\n%s\n*** Stderr:\n%s\n", message.certSubject, ctx.lastCmdStdout.String(), stderr)
+					var info string
+					if certExists {
+						info = "Certificate signing for \"%s\" failed -- looks like there's already a signed cert for that host."
+					} else {
+						info = "Certificate signing for \"%s\" failed! More info in log."
+					}
+					ctx.notify(fmt.Sprintf(info, message.certSubject))
+					ctx.actionDone("sign", message, false, fmt.Sprintf(info, message.certSubject))
+				}
+			} else {
+				info := fmt.Sprintf("Certificate for \"%s\" has been signed.", message.certSubject)
+				ctx.actionDone("sign", message, true, info)
+				ctx.notify(info)
+				ctx.log.Println(info)
+			}
 		}
 	}
 
@@ -182,6 +225,7 @@ func (ctx *CertSigner) csrWatchWorker() {
 					subject := csrName[:extensionIx]
 					ctx.signQueue <- signChanMessage{
 						certSubject:       subject,
+						signCSR:           true,
 						cleanExistingCert: false, // Would have been done already.
 						resultChan:        nil,   // Will cause signQueueWorker to only proceed if subject has been authorized.
 					}
@@ -189,6 +233,9 @@ func (ctx *CertSigner) csrWatchWorker() {
 			}
 		case err := <-ctx.csrWatcher.Errors:
 			ctx.log.Println("CSR watcher reported error: ", err)
+		case <-ctx.stoppedCsrWatcher:
+			close(ctx.signQueue)
+			return
 		}
 	}
 }
@@ -214,15 +261,24 @@ func (ctx *CertSigner) notify(message string) {
 	ctx.notifyCallback(message)
 }
 
-func (ctx *CertSigner) signingDone(subject string, success bool, message string) {
-	temp := *ctx.authorizedCertSubjects
-	resultChan, present := temp[subject]
-	if present {
+func (ctx *CertSigner) actionDone(action string, entry signChanMessage, success bool, message string) {
+	resultChan := entry.resultChan
+	if action == "sign" {
+		temp := *ctx.authorizedCertSubjects
+		tempChan, present := temp[entry.certSubject]
+		if present {
+			resultChan = tempChan
+			delete(temp, entry.certSubject)
+		}
+	}
+	if resultChan != nil {
 		resultChan <- SigningResult{
+			Action:  action,
 			Success: success,
 			Message: message,
 		}
-		close(resultChan)
-		delete(temp, subject)
+		if action == "sign" || !entry.signCSR {
+			close(resultChan)
+		}
 	}
 }

@@ -82,27 +82,63 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	// Set up slice for response channels we've been asked to wait on.
 	waitResultChans := []reflect.SelectCase{}
 
-	if i := tasks.Search("cert"); i < len(tasks) && tasks[i] == "cert" {
-		var certRevoke = false
-		if request.Form.Get("cert-revoke") != "" && request.Form.Get("cert-revoke") != "false" {
-			certRevoke = true
-		}
+	// Cert-related tasks
+	var certSign, certRevoke = false, false
 
-		signingResultChan := ctx.certSigner.Sign(hostname, certRevoke)
-		if i := waits.Search("cert"); i < len(waits) && waits[i] == "cert" {
+	for i := len(tasks) - 1; i >= 0; i-- {
+		if tasks[i] == "cert" || tasks[i] == "cert-sign" {
+			certSign = true
+			// Remove the cert task from the remaining tasks list.
+			tasks = append(tasks[0:i], tasks[i+1:]...)
+		} else if tasks[i] == "cert-revoke" {
+			certRevoke = true
+			// Remove the cert task from the remaining tasks list.
+			tasks = append(tasks[0:i], tasks[i+1:]...)
+		}
+	}
+
+	if request.Form.Get("cert-revoke") != "" && request.Form.Get("cert-revoke") != "false" {
+		certRevoke = true
+	}
+
+	if certRevoke {
+		cleaningResultChan := ctx.certSigner.Clean(hostname)
+		if i := waits.Search("cert-revoke"); i < len(waits) && waits[i] == "cert-revoke" {
+			waitResultChans = append(waitResultChans, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(cleaningResultChan),
+			})
+		} else {
+			responseWrapper["cert-revoke"] = TaskResult{
+				Complete: false,
+				Success:  true,
+				Message:  "Certificate cleaning operation was queued. To see the results in this response, include \"cert-revoke\" in the waits list.",
+			}
+		}
+	}
+
+	if certSign {
+		signingResultChan := ctx.certSigner.Sign(hostname, false)
+		shouldWait := false
+		for _, wait := range waits {
+			if wait == "cert" || wait == "cert-sign" {
+				shouldWait = true
+				break
+			}
+		}
+		if shouldWait {
 			waitResultChans = append(waitResultChans, reflect.SelectCase{
 				Dir:  reflect.SelectRecv,
 				Chan: reflect.ValueOf(signingResultChan),
 			})
 		} else {
-			responseWrapper["cert"] = TaskResult{
+			responseWrapper["cert-sign"] = TaskResult{
 				Complete: false,
 				Success:  true,
-				Message:  "Certificate signing operation was queued. To see the results in this response, include \"cert\" in the waits list.",
+				Message:  "Certificate signing operation was queued. To see the results in this response, include \"cert-sign\" in the waits list.",
 			}
 		}
-		// Remove the cert task from the remaining tasks list.
-		tasks = append(tasks[0:i], tasks[i+1:]...)
+
 	}
 
 	// Process generic exec tasks
@@ -133,7 +169,7 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 		}
 		switch value := rvalue.Interface().(type) {
 		case certsign.SigningResult:
-			responseWrapper["cert"] = TaskResult{
+			responseWrapper[fmt.Sprintf("cert-%s", value.Action)] = TaskResult{
 				Complete: true,
 				Success:  value.Success,
 				Message:  value.Message,
