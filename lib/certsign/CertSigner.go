@@ -124,7 +124,6 @@ func (ctx *CertSigner) Shutdown() {
 
 func (ctx *CertSigner) signQueueWorker() {
 	for message, opened := <-ctx.signQueue; opened; message, opened = <-ctx.signQueue {
-		ctx.log.Printf("signQueueWorker: %#v\n", message)
 		certExists := false
 		existingCertPath := fmt.Sprintf("%s/%s.pem", ctx.puppetConfig.SignedCertDir, message.certSubject)
 		fh, _ := ctx.openFileFunc(existingCertPath, os.O_RDONLY, 0660)

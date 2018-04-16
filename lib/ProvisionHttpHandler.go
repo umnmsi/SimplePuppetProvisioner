@@ -86,7 +86,7 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	var certSign, certRevoke = false, false
 
 	for i := len(tasks) - 1; i >= 0; i-- {
-		if tasks[i] == "cert" || tasks[i] == "cert-sign" {
+		if tasks[i] == "cert-sign" {
 			certSign = true
 			// Remove the cert task from the remaining tasks list.
 			tasks = append(tasks[0:i], tasks[i+1:]...)
@@ -95,10 +95,6 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 			// Remove the cert task from the remaining tasks list.
 			tasks = append(tasks[0:i], tasks[i+1:]...)
 		}
-	}
-
-	if request.Form.Get("cert-revoke") != "" && request.Form.Get("cert-revoke") != "false" {
-		certRevoke = true
 	}
 
 	if certRevoke {
@@ -119,14 +115,7 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 
 	if certSign {
 		signingResultChan := ctx.certSigner.Sign(hostname, false)
-		shouldWait := false
-		for _, wait := range waits {
-			if wait == "cert" || wait == "cert-sign" {
-				shouldWait = true
-				break
-			}
-		}
-		if shouldWait {
+		if i := waits.Search("cert-sign"); i < len(waits) && waits[i] == "cert-sign" {
 			waitResultChans = append(waitResultChans, reflect.SelectCase{
 				Dir:  reflect.SelectRecv,
 				Chan: reflect.ValueOf(signingResultChan),
