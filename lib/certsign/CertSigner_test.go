@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sutFactory(watcher *interfaces.FsnotifyWatcher, notifyCallback func(message string), execMocks []string) (*CertSigner, error, *bytes.Buffer) {
@@ -98,6 +99,26 @@ func TestCertSigner_Sign_FailsIfStopped(t *testing.T) {
 	}
 }
 
+func TestCertSigner_SignRevoke_FailsIfStopped(t *testing.T) {
+	sut, err, _ := sutFactory(nil, nil, nil)
+	if err != nil {
+		t.FailNow()
+	}
+	sut.Shutdown()
+	resultChan := sut.Sign("foo.bar.com", true)
+	result := <-resultChan
+
+	if result.Success {
+		t.Error("Revoking did not fail when signing manager had been shutdown")
+	}
+
+	result = <-resultChan
+
+	if result.Success {
+		t.Error("Signing did not fail when signing manager had been shutdown")
+	}
+}
+
 func TestNewCertSigner(t *testing.T) {
 	sut, err, logBuf := sutFactory(nil, nil, nil)
 	if sut == nil || err != nil {
@@ -145,12 +166,24 @@ func TestCertSigner_Sign(t *testing.T) {
 	}
 
 	resultChan := sut.Sign("foo.bar.com", true)
+	// 1st message is cert-clean
 	result := <-resultChan
+
+	if !result.Success {
+		t.Error("Revocation result was not Success.")
+	}
+	expect := "No existing certificate for foo.bar.com to revoke."
+	if result.Message != expect {
+		t.Errorf("Expected signing result Message \"%s\", got \"%s\"", expect, result.Message)
+	}
+
+	// 2nd message is cert-sign
+	result = <-resultChan
 
 	if !result.Success {
 		t.Error("Signing result was not Success.")
 	}
-	expect := "Certificate for \"foo.bar.com\" has been signed."
+	expect = "Certificate for \"foo.bar.com\" has been signed."
 	if result.Message != expect {
 		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
 	}
@@ -190,15 +223,28 @@ func TestCertSigner_Sign_RevokesWhenAppropriate(t *testing.T) {
 	}
 
 	resultChan := sut.Sign("foo.bar.com", true)
+	// 1st message is cert-clean
 	result := <-resultChan
+
+	if !result.Success {
+		t.Error("Revocation result was not Success.")
+	}
+	expect := "An existing certificate for foo.bar.com was revoked to make way for the new certificate."
+	if result.Message != expect {
+		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
+	}
+
+	// 2nd message is cert-sign
+	result = <-resultChan
 
 	if !result.Success {
 		t.Error("Signing result was not Success")
 	}
-	expect := "Certificate for \"foo.bar.com\" has been signed."
+	expect = "Certificate for \"foo.bar.com\" has been signed."
 	if result.Message != expect {
 		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
 	}
+
 	if notifications[1] != expect {
 		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
 	}
@@ -242,16 +288,62 @@ func TestCertSigner_Sign_HandlesSigningError(t *testing.T) {
 
 	resultChan := sut.Sign("foo.bar.com", true)
 	result := <-resultChan
+	result = <-resultChan
 
 	if result.Success {
 		t.Error("Expected signing failure reported Success.")
 	}
 	expect := "Certificate signing for \"foo.bar.com\" failed! More info in log."
 	if result.Message != expect {
-		t.Error("Expected result Message %s, got %s", expect, result.Message)
+		t.Errorf("Expected result Message \"%s\", got \"%s\"", expect, result.Message)
 	}
 	if lastNotification != expect {
-		t.Error("Expected notification %s, got %s", expect, lastNotification)
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, lastNotification)
+	}
+
+	logStuff := logBuf.String()
+	if !strings.Contains(logStuff, "Certificate signing for foo.bar.com failed") {
+		t.Error("Log did not contain failure entry")
+	}
+	if !strings.Contains(logStuff, "Simulated failure in certificate signing") {
+		t.Error("Log did not contain output from failed signing process")
+	}
+}
+
+func TestCertSigner_Sign_HandlesExistingCertFailure(t *testing.T) {
+	var lastNotification string
+	var mockNotification = func(message string) {
+		lastNotification = message
+	}
+	sut, err, logBuf := sutFactory(nil, mockNotification, []string{"TestHelperPuppetSignFail"})
+	if err != nil {
+		t.FailNow()
+	}
+
+	defer func() { sut.Shutdown() }()
+
+	// Use a dummy for OpenFile that reports an existing cert.
+	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		expect := "/testssl/cert/foo.bar.com.pem"
+		if name != expect {
+			t.Errorf("Expected to test for existing certificate at %s, got %s", expect, name)
+		}
+		self, _ := os.Executable()
+		return os.OpenFile(self, flag, perm)
+	}
+
+	resultChan := sut.Sign("foo.bar.com", false)
+	result := <-resultChan
+
+	if result.Success {
+		t.Error("Expected signing failure reported Success.")
+	}
+	expect := "Certificate signing for \"foo.bar.com\" failed -- looks like there's already a signed cert for that host."
+	if result.Message != expect {
+		t.Errorf("Expected result Message \"%s\", got \"%s\"", expect, result.Message)
+	}
+	if lastNotification != expect {
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, lastNotification)
 	}
 
 	logStuff := logBuf.String()
@@ -298,6 +390,7 @@ func TestCertSigner_Sign_HandlesDeferredCsr(t *testing.T) {
 
 	resultChan := sut.Sign("foo.bar.com", true)
 	result := <-resultChan
+	result = <-resultChan
 
 	logStuff := logBuf.String()
 	if !result.Success {
@@ -307,7 +400,9 @@ func TestCertSigner_Sign_HandlesDeferredCsr(t *testing.T) {
 	if result.Message != expect {
 		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
 	}
-	if notifications[1] != expect {
+	if len(notifications) < 2 {
+		t.Errorf("Expected 2 notifications, got %d (%v)", len(notifications), notifications)
+	} else if notifications[1] != expect {
 		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
 	}
 	if !strings.Contains(logStuff, expect) {
@@ -315,7 +410,7 @@ func TestCertSigner_Sign_HandlesDeferredCsr(t *testing.T) {
 	}
 
 	expect = "Certificate for \"foo.bar.com\" will be signed when a matching CSR arrives."
-	if notifications[0] != expect {
+	if len(notifications) > 0 && notifications[0] != expect {
 		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[0])
 	}
 	if !strings.Contains(logStuff, expect) {
@@ -336,6 +431,7 @@ func TestCertSigner_Sign_IgnoresUnauthorizedCsrs(t *testing.T) {
 
 	sut.signQueue <- signChanMessage{
 		certSubject:       "unauthorized.bar.com",
+		signCSR:           true,
 		cleanExistingCert: false, // Would have been done already.
 		resultChan:        nil,   // Will cause signQueueWorker to only proceed if subject has been authorized.
 	}
@@ -347,6 +443,133 @@ func TestCertSigner_Sign_IgnoresUnauthorizedCsrs(t *testing.T) {
 	if len(notifications) > 0 {
 		t.Error("Queued signing Message for a CSR that lacked authorization resulted in signing activity.")
 	}
+}
+
+func TestCertSigner_Clean(t *testing.T) {
+	var notifications []string
+	var mockNotification = func(message string) {
+		notifications = append(notifications, message)
+	}
+	sut, err, logBuf := sutFactory(nil, mockNotification, []string{"TestHelperPuppetRevokeOk"})
+	if err != nil {
+		t.FailNow()
+	}
+
+	defer func() { sut.Shutdown() }()
+
+	// Use a dummy for OpenFile that reports an existing cert.
+	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		expect := "/testssl/cert/foo.bar.com.pem"
+		if name != expect {
+			t.Errorf("Expected to test for existing certificate at %s, got %s", expect, name)
+		}
+		self, _ := os.Executable()
+		return os.OpenFile(self, flag, perm)
+	}
+
+	resultChan := sut.Clean("foo.bar.com")
+	result := <-resultChan
+
+	if !result.Success {
+		t.Error("Revocation result was not Success.")
+	}
+	expect := "Existing certificate for foo.bar.com was revoked."
+	if result.Message != expect {
+		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
+	}
+
+	if notifications[0] != expect {
+		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
+	}
+
+	logStuff := logBuf.String()
+	if !strings.Contains(logStuff, "Revoking existing") {
+		t.Error("Log did not contain entry for beginning revocation.")
+	}
+	if !strings.Contains(logStuff, "Revoked foo.bar.com") {
+		t.Error("Log did not contain entry for successful revocation.")
+	}
+}
+
+func TestCertSigner_Clean_FailsIfStopped(t *testing.T) {
+	sut, err, _ := sutFactory(nil, nil, nil)
+	if err != nil {
+		t.FailNow()
+	}
+	sut.Shutdown()
+	resultChan := sut.Clean("foo.bar.com")
+	result := <-resultChan
+
+	if result.Success {
+		t.Error("Signing did not fail when signing manager had been shutdown")
+	}
+}
+
+func TestCertSigner_ProcessingBacklogLength(t *testing.T) {
+	var lastNotification string
+	var mockNotification = func(message string) {
+		lastNotification = message
+	}
+	sut, err, logBuf := sutFactory(nil, mockNotification, nil)
+	if err != nil {
+		t.FailNow()
+	}
+
+	// Use a channel to pause signQueueWorker
+	stallChan := make(chan struct{}, 1)
+
+	defer func() { sut.Shutdown() }()
+
+	sut.openFileFunc = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		expect := "/testssl/cert/foo.bar.com.pem"
+		if name != expect {
+			t.Errorf("Expected to test for existing certificate at %s, got %s", expect, name)
+		}
+		<-stallChan
+		return nil, errors.New("simulated error")
+	}
+
+	len := sut.ProcessingBacklogLength()
+
+	if len != 0 {
+		t.Error("Processing length for empty signQueue was not 0")
+	}
+
+	// 1st signQueue entry is removed from signQueue, but then signQueueWorker will pause in openFileFunc
+	sut.signQueue <- signChanMessage{
+		certSubject:       "foo.bar.com",
+		signCSR:           false,
+		cleanExistingCert: true,
+		resultChan:        nil,
+	}
+	sut.signQueue <- signChanMessage{
+		certSubject:       "foo.bar.com",
+		signCSR:           false,
+		cleanExistingCert: true,
+		resultChan:        nil,
+	}
+
+	// Let signQueueWorker catch up
+	time.Sleep(time.Second)
+
+	len = sut.ProcessingBacklogLength()
+
+	if len != 1 {
+		t.Errorf("Expected signQueue length 1, got %d", len)
+	}
+
+	if lastNotification != "" {
+		t.Errorf("Expected no notifications, but got \"%s\"", lastNotification)
+	}
+
+	logStuff := logBuf.String()
+	if strings.Contains(logStuff, "certificate") {
+		t.Errorf("No certificate activity expected in logs, but found \"%s\"", logStuff)
+	}
+
+	// Resume signQueue
+	stallChan <- struct{}{}
+	stallChan <- struct{}{}
 }
 
 // Mock process exec bodies
