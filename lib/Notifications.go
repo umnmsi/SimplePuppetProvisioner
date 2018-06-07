@@ -1,9 +1,15 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"github.com/go-chat-bot/bot"
 	"github.com/go-chat-bot/bot/irc"
 	_ "github.com/go-chat-bot/plugins/chucknorris" // ;)
+	"io/ioutil"
+	"net/http"
+	"time"
 )
 
 type Notifications struct {
@@ -39,6 +45,7 @@ func NewNotifications(config *AppConfig) *Notifications {
 		if cn != nil {
 			switch cn.Type {
 			case "irc":
+				config.Log.Print("Configuring notifications for IRC\n")
 				if ircConfigured {
 					config.Log.Print("Only one irc notification type is supported. The first will be used.\n")
 					continue
@@ -59,6 +66,20 @@ func NewNotifications(config *AppConfig) *Notifications {
 					go irc.Run(nil)
 					ircConfigured = true
 				}
+			case "gchat":
+				config.Log.Print("Configuring notifications for Google Chat\n")
+				if len(cn.Webhooks) == 0 {
+					config.Log.Print("Warning: Invalid Google Chat configuration. No notifications will be sent.\n")
+				} else {
+					n.enabled = true
+					target := notificationTarget{
+						bot: bot.New(&bot.Handlers{
+							Response: gChatResponseHandler,
+						}),
+						notifyChannels: cn.Webhooks,
+					}
+					n.targets = append(n.targets, &target)
+				}
 			default:
 				config.Log.Printf("Warning: Unknown notification type: %s. No notifications will be sent.\n", cn.Type)
 			}
@@ -66,6 +87,26 @@ func NewNotifications(config *AppConfig) *Notifications {
 	}
 
 	return n
+}
+
+func gChatResponseHandler(webhookURL string, message string, sender *bot.User) {
+	if message != "" {
+		requestArgs := map[string]string{"text": message}
+		requestJSON, _ := json.Marshal(requestArgs)
+		httpClient := &http.Client{
+			Timeout: time.Second * 5,
+		}
+		resp, err := httpClient.Post(webhookURL, "application/json; charset=UTF-8", bytes.NewBuffer(requestJSON))
+		if err != nil {
+			fmt.Println("HTTP client error:", err)
+		} else {
+			_, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println("Failed to read resp body:", err)
+			}
+		}
+		defer resp.Body.Close()
+	}
 }
 
 func (ctx *Notifications) injectTestBot(bot *bot.Bot) {

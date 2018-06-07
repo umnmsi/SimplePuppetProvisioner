@@ -40,6 +40,7 @@ type NotificationsConfig struct {
 	Type       string
 	IrcConfig  *irc.Config
 	SlackToken *string
+	Webhooks   []string
 }
 
 func LoadTheConfig(configName string, configPaths []string) AppConfig {
