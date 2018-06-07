@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/go-chat-bot/bot"
 	"github.com/go-chat-bot/bot/irc"
 	_ "github.com/go-chat-bot/plugins/chucknorris" // ;)
@@ -74,7 +73,7 @@ func NewNotifications(config *AppConfig) *Notifications {
 					n.enabled = true
 					target := notificationTarget{
 						bot: bot.New(&bot.Handlers{
-							Response: gChatResponseHandler,
+							Response: gChatResponseHandlerWrapper(config),
 						}),
 						notifyChannels: cn.Webhooks,
 					}
@@ -89,23 +88,29 @@ func NewNotifications(config *AppConfig) *Notifications {
 	return n
 }
 
-func gChatResponseHandler(webhookURL string, message string, sender *bot.User) {
-	if message != "" {
-		requestArgs := map[string]string{"text": message}
-		requestJSON, _ := json.Marshal(requestArgs)
-		httpClient := &http.Client{
-			Timeout: time.Second * 5,
-		}
-		resp, err := httpClient.Post(webhookURL, "application/json; charset=UTF-8", bytes.NewBuffer(requestJSON))
-		if err != nil {
-			fmt.Println("HTTP client error:", err)
-		} else {
-			_, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Println("Failed to read resp body:", err)
+func gChatResponseHandlerWrapper(config *AppConfig) func(string, string, *bot.User) {
+	return func(webhookURL string, message string, sender *bot.User) {
+		if message != "" {
+			requestArgs := map[string]string{"text": message}
+			requestJSON, _ := json.Marshal(requestArgs)
+			httpClient := &http.Client{
+				Timeout: time.Second * 5,
 			}
+			resp, err := httpClient.Post(webhookURL, "application/json; charset=UTF-8", bytes.NewBuffer(requestJSON))
+			if err != nil {
+				config.Log.Printf("HTTP client error: %s\n", err)
+			} else {
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					config.Log.Printf("Failed to read resp body: %s\n", err)
+				} else {
+					if resp.StatusCode < 200 || resp.StatusCode > 299 {
+						config.Log.Printf("Failed to post message to %s: %s\n", webhookURL, string(body))
+					}
+				}
+			}
+			defer resp.Body.Close()
 		}
-		defer resp.Body.Close()
 	}
 }
 
