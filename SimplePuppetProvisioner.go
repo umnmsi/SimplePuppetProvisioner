@@ -84,7 +84,6 @@ func main() {
 	appConfig.Log.Println("Certificate signing manager shutdown.")
 
 	appConfig.Log.Println("Process will now exit.")
-	appConfig.FlushLog()
 }
 
 func makeExecTaskConfigsMap(config *lib.AppConfig) map[string]genericexec.GenericExecConfig {

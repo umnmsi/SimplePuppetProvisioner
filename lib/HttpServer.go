@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"net/http"
@@ -45,11 +46,15 @@ func (c *HttpServer) createRoutes(router *http.ServeMux) {
 
 	router.Handle("/webhook", NewGithubWebhookHttpHandler(c.appConfig.GithubWebhooks, c.execManager, c.appConfig.Log))
 
-	protectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig)
+	provisionProtectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig.ProvisionAuth)
+	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier, c.certSigner, c.execManager)
+
+	router.Handle("/provision", provisionProtectionMiddlewareFactory.WrapInProtectionMiddleware(provisionHandler))
+
+	protectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig.HttpAuth)
 	protectedRoutes := http.NewServeMux()
 
-	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier, c.certSigner, c.execManager)
-	protectedRoutes.Handle("/provision", provisionHandler)
+	protectedRoutes.Handle("/log", http.HandlerFunc(c.logHandler))
 
 	// If it didn't match an unprotected route, it goes through the protection middleware.
 	router.Handle("/", protectionMiddlewareFactory.WrapInProtectionMiddleware(protectedRoutes))
@@ -74,4 +79,12 @@ func (c *HttpServer) internalStatsHandler(response http.ResponseWriter, request 
 	if err := jsonWriter.Encode(&statsResponse); err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+func (c *HttpServer) logHandler(response http.ResponseWriter, request *http.Request) {
+	c.appConfig.logBuffer.ring.Do(func(p interface{}) {
+		if p.(string) != "" {
+			fmt.Fprintf(response, p.(string))
+		}
+	})
 }

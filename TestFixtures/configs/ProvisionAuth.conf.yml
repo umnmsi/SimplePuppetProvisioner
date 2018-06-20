@@ -1,0 +1,6 @@
+---
+BindAddress: 127.0.0.1:8240
+PuppetExecutable: ../TestFixtures/fakepuppet.sh
+ProvisionAuth:
+  Type: basic
+  DbFile: ../TestFixtures/test.htpasswd
