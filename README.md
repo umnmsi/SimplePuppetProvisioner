@@ -93,7 +93,7 @@ object with the following values:
 #### Request
 **Method: GET**
 #### Response
-**Content_Type: text/plain
+**Content-Type: text/plain**
 Prints the last 50 log messages. Can be used in notification messages to provide a URL to additional details on errors.
 
 ## Configuration
