@@ -3,6 +3,7 @@ package genericexec
 import (
 	"bytes"
 	"fmt"
+	"github.com/acarl005/stripansi"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
 	"html/template"
 	"log"
@@ -126,9 +127,9 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 
 	result := GenericExecResult{Name: execConfig.Name}
 	err := cmd.Run()
-	result.StdErr = errBuffer.String()
+	result.StdErr = strings.TrimSpace(errBuffer.String())
 	errBuffer.Truncate(0)
-	result.StdOut = outBuffer.String()
+	result.StdOut = strings.TrimSpace(outBuffer.String())
 	outBuffer.Truncate(0)
 	if err != nil {
 		result.ExitCode = 1
@@ -145,43 +146,39 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 	// Send notifications if configured, and log.
 	var logMsg, notificationMsg string
 	if result.ExitCode == 0 {
+		logMsg = fmt.Sprintf("Command \"%s\" exited 0.", cmdStringApproximation(cmd))
 		if execConfig.SuccessMessage != "" {
-			logMsg, err = renderMessageTemplate(execConfig.SuccessMessage, templateValues, &result.StdOut, &result.StdErr)
+			notificationMsg, err = renderMessageTemplate(execConfig.SuccessMessage, templateValues, &result.StdOut, &result.StdErr)
 			if err != nil {
-				logMsg = fmt.Sprintf("Command \"%s\" exited 0. However, an error occurred processing the success Message template: %v", cmdStringApproximation(cmd), err)
-			} else {
-				notificationMsg = logMsg
+				notificationMsg = logMsg + fmt.Sprintf(" However, an error occurred processing the success Message template: %v", err)
 			}
-		} else {
-			// Log, but no notification if no explicit SuccessMessage was configured.
-			logMsg = fmt.Sprintf("Command \"%s\" exited 0.", cmdStringApproximation(cmd))
+			logMsg += fmt.Sprintf("\nSending notification: \"%s\"", notificationMsg)
 		}
 	} else {
-		if len(result.StdOut) == 0 && len(result.StdErr) == 0 {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d!", cmdStringApproximation(cmd), result.ExitCode)
-		} else if len(result.StdOut) == 0 {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On StdErr: %s", cmdStringApproximation(cmd), result.ExitCode, result.StdErr)
-		} else if len(result.StdErr) == 0 {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On StdOut: %s", cmdStringApproximation(cmd), result.ExitCode, result.StdOut)
-		} else {
-			logMsg = fmt.Sprintf("Command \"%s\" exited %d! On StdOut: %s\nOn StdErr: %s", cmdStringApproximation(cmd), result.ExitCode, result.StdOut, result.StdErr)
-		}
-
+		logMsg = fmt.Sprintf("Command \"%s\" exited %d!", cmdStringApproximation(cmd), result.ExitCode)
 		if execConfig.ErrorMessage != "" {
 			notificationMsg, err = renderMessageTemplate(execConfig.ErrorMessage, templateValues, &result.StdOut, &result.StdErr)
 			if err != nil {
-				notificationMsg = ""
-				logMsg = logMsg + fmt.Sprintf("Additionally, an error occurred processing the error Message template: %v", err)
+				notificationMsg = logMsg + fmt.Sprintf(" Additionally, an error occurred processing the error Message template: %v", err)
 			}
+			logMsg += fmt.Sprintf("\nSending notification: \"%s\"", notificationMsg)
 		}
 	}
+	if len(result.StdOut) > 0 {
+		logMsg += fmt.Sprintf("\nOn StdOut: %s", result.StdOut)
+	}
+	if len(result.StdErr) > 0 {
+		logMsg += fmt.Sprintf("\nOn StdErr: %s", result.StdErr)
+	}
+
+	// Strip out ANSI color sequences from messages
 
 	if logMsg != "" {
-		ctx.log.Println(logMsg)
+		ctx.log.Println(stripansi.Strip(string(logMsg)))
 	}
 
 	if notificationMsg != "" {
-		ctx.notifyCallback(notificationMsg)
+		ctx.notifyCallback(stripansi.Strip(string(notificationMsg)))
 		result.Message = notificationMsg
 	}
 
