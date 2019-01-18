@@ -129,5 +129,8 @@ suitable for use as the target of a primitive HTTP heartbeat health checker.
 <tr><td>cert-signing-backlog</td><td>The number of calls that need to be made to puppet cert sign but are queued waiting on other signing operations to complete. Signing operations are not run concurrently.</td></tr>
 </table>
 
+## Tests
+Tests can be run with the usual `go test` invocation from the project root directory: `go test ./...`
+
 - - -
 Development of this software was sponsored by the [Minnesota Supercomputing Institute](https://www.msi.umn.edu/).
