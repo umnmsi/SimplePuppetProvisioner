@@ -121,7 +121,7 @@ func TestWebhookHandlerMissingEvent(t *testing.T) {
 
 func TestWebhookHandlerPushEvent(t *testing.T) {
 	sut, testLogBuf, execManagerMock := sutFactory(&WebhooksConfig{
-		Secret: "asdf",
+		Secret:                     "asdf",
 		EnableStandardR10kListener: true,
 		R10kExecutable:             "r10k",
 		Listeners: []ExecListener{

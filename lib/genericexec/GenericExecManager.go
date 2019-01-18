@@ -56,7 +56,7 @@ type TemplateGetter interface {
 
 func NewGenericExecManager(execTaskConfigsByName map[string]GenericExecConfig, puppetConfig *puppetconfig.PuppetConfig, log *log.Logger, notifyCallback func(message string)) *GenericExecManager {
 	execManager := GenericExecManager{
-		log: log,
+		log:                   log,
 		execTaskConfigsByName: execTaskConfigsByName,
 		puppetConfig:          puppetConfig,
 		notifyCallback:        notifyCallback,
