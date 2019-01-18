@@ -2,10 +2,16 @@
 BindAddress: 127.0.0.1:8240
 LogFile: /tmp/spp.log
 
+# Global HTTP authentication setting
 # HttpAuth:
 #   Type: basic # digest also supported.
 #   Realm: puppet.my.org
 #   DbFile: /path/to/.htpasswd # Consider the htpasswd or htdigest utilities
+
+# Provision API authentication setting - will default to HttpAuth values if not defined
+# ProvisionAuth:
+#   Type: basic
+#   DbFile: htpasswd
 
 PuppetExecutable: /opt/puppetlabs/bin/puppet
 
@@ -66,3 +72,6 @@ Notifications:
       Channels: "#iopsdev"
       Nick: PuppetBot
       Password: ""
+   - Type: gchat
+     Webhooks:
+        - 'https://chat.googleapis.com/v1/spaces/xxxxxxxxxxx/messages?key=xxxxx&token=xxxxx'

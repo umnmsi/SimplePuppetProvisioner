@@ -124,7 +124,7 @@ func TestGenericExecManager_Fail_Reentrant(t *testing.T) {
 			Message:  "Test command failed. Stderr: a b",
 		},
 		notificationExpects: []string{"Test command failed. Stderr: a b"},
-		logExpects:          []string{"Command \"fail a b\" exited 2! On StdErr: a b"},
+		logExpects:          []string{"Command \"fail a b\" exited 2!\nSending notification: \"Test command failed. Stderr: a b\"\nOn StdErr: a b"},
 	}
 	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
@@ -147,7 +147,7 @@ func TestGenericExecManager_Fail_Nonreentrant(t *testing.T) {
 			Message:  "Test command failed. Stderr: a b",
 		},
 		notificationExpects: []string{"Test command failed. Stderr: a b"},
-		logExpects:          []string{"Command \"fail a b\" exited 2! On StdErr: a b"},
+		logExpects:          []string{"Command \"fail a b\" exited 2!\nSending notification: \"Test command failed. Stderr: a b\"\nOn StdErr: a b"},
 	}
 	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }

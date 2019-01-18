@@ -245,7 +245,9 @@ func TestCertSigner_Sign_RevokesWhenAppropriate(t *testing.T) {
 		t.Errorf("Expected signing result Message %s, got %s", expect, result.Message)
 	}
 
-	if notifications[1] != expect {
+	if len(notifications) < 2 {
+		t.Errorf("Expected 2 notifications, got %d (%v)", len(notifications), notifications)
+	} else if notifications[1] != expect {
 		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
 	}
 	expect = "An existing certificate for foo.bar.com was revoked to make way for the new certificate."

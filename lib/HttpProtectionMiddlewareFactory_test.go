@@ -9,19 +9,19 @@ import (
 
 func TestInvalidHttpAuthTypePanics(t *testing.T) {
 	appConfig := LoadTheConfig("InvalidAuthType.conf", []string{"../TestFixtures/configs"})
-	sut := NewHttpProtectionMiddlewareFactory(appConfig)
+	sut := NewHttpProtectionMiddlewareFactory(appConfig.HttpAuth)
 	expectMiddlewareThrows(sut, t, "Configuration error: HttpAuth Type \"foo\" is unsupported.\n")
 }
 
 func TestMissingAuthDbFilePanics(t *testing.T) {
 	appConfig := LoadTheConfig("InvalidDbFile.conf", []string{"../TestFixtures/configs"})
-	sut := NewHttpProtectionMiddlewareFactory(appConfig)
+	sut := NewHttpProtectionMiddlewareFactory(appConfig.HttpAuth)
 	expectMiddlewareThrows(sut, t, "stat /dev/notafile: no such file or directory")
 }
 
 func TestValidAuthConfigResultsInAuthenticationRequired(t *testing.T) {
 	appConfig := LoadTheConfig("NoRealm.conf", []string{"../TestFixtures/configs"})
-	sut := NewHttpProtectionMiddlewareFactory(appConfig)
+	sut := NewHttpProtectionMiddlewareFactory(appConfig.HttpAuth)
 	var called = false
 	testHandler := func(response http.ResponseWriter, request *http.Request) {
 		called = true
@@ -36,9 +36,33 @@ func TestValidAuthConfigResultsInAuthenticationRequired(t *testing.T) {
 	}
 }
 
+func TestProvisionAuthDefaultsToHttpAuth(t *testing.T) {
+	appConfig := LoadTheConfig("NoRealm.conf", []string{"../TestFixtures/configs"})
+	if appConfig.ProvisionAuth != appConfig.HttpAuth {
+		t.Errorf("ProvisionAuth did not default to HttpAuth parameters.\n")
+	}
+}
+
+func TestValidProvisionAuthResultsInAuthenticationRequired(t *testing.T) {
+	appConfig := LoadTheConfig("ProvisionAuth.conf", []string{"../TestFixtures/configs"})
+	sut := NewHttpProtectionMiddlewareFactory(appConfig.ProvisionAuth)
+	var called = false
+	testHandler := func(response http.ResponseWriter, request *http.Request) {
+		called = true
+	}
+	protectedHandler := sut.WrapInProtectionMiddleware(http.HandlerFunc(testHandler))
+
+	testRequest, _ := http.NewRequest("POST", "http://0.0.0.0/provision", strings.NewReader(""))
+	monitor := httptest.NewRecorder()
+	protectedHandler.ServeHTTP(monitor, testRequest)
+	if monitor.Code != 401 || called == true {
+		t.Errorf("Authorization-protected request did not get protected by middleware (HTTP %d).\n", monitor.Code)
+	}
+}
+
 func TestNoAuthConfigResultsInNoAuthenticationRequired(t *testing.T) {
 	appConfig := LoadTheConfig("NoAuth.conf", []string{"../TestFixtures/configs"})
-	sut := NewHttpProtectionMiddlewareFactory(appConfig)
+	sut := NewHttpProtectionMiddlewareFactory(appConfig.HttpAuth)
 	var called = false
 	testHandler := func(response http.ResponseWriter, request *http.Request) {
 		called = true
@@ -55,7 +79,7 @@ func TestNoAuthConfigResultsInNoAuthenticationRequired(t *testing.T) {
 
 func TestValidAuthResultsInProperlyServedResponse(t *testing.T) {
 	appConfig := LoadTheConfig("NoRealm.conf", []string{"../TestFixtures/configs"})
-	sut := NewHttpProtectionMiddlewareFactory(appConfig)
+	sut := NewHttpProtectionMiddlewareFactory(appConfig.HttpAuth)
 	var called = false
 	testHandler := func(response http.ResponseWriter, request *http.Request) {
 		called = true

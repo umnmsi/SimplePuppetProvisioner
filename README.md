@@ -88,6 +88,13 @@ object with the following values:
   <tr><td>Message</td><td>string</td><td>An optional message with details about the task's outcome.</td></tr>
 </table>
 
+### /log
+#### Request
+**Method: GET**
+#### Response
+**Content-Type: text/plain**
+Prints the last 50 log messages. Can be used in notification messages to provide a URL to additional details on errors.
+
 ## Configuration
 ### File formats and location
 The service will look for its configuration file in the working directory and in

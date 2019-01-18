@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"bufio"
+	"container/ring"
 	"github.com/go-chat-bot/bot/irc"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
@@ -19,6 +19,7 @@ type AppConfig struct {
 	BindAddress      string
 	LogFile          string
 	HttpAuth         *HttpAuthConfig
+	ProvisionAuth    *HttpAuthConfig
 	PuppetExecutable string
 	PuppetConfDir    string
 	PuppetConfig     *puppetconfig.PuppetConfig
@@ -27,7 +28,7 @@ type AppConfig struct {
 
 	Notifications []*NotificationsConfig
 	Log           *log.Logger
-	logBuffer     *bufio.Writer
+	logBuffer     *RingLog
 }
 
 type HttpAuthConfig struct {
@@ -40,6 +41,19 @@ type NotificationsConfig struct {
 	Type       string
 	IrcConfig  *irc.Config
 	SlackToken *string
+	Webhooks   []string
+}
+
+type RingLog struct {
+	out  io.Writer
+	ring *ring.Ring
+}
+
+func (logBuffer *RingLog) Write(p []byte) (n int, err error) {
+	n, err = logBuffer.out.Write(p)
+	logBuffer.ring.Value = string(p)
+	logBuffer.ring = logBuffer.ring.Next()
+	return n, err
 }
 
 func LoadTheConfig(configName string, configPaths []string) AppConfig {
@@ -80,12 +94,17 @@ func LoadTheConfig(configName string, configPaths []string) AppConfig {
 }
 
 func (ctx *AppConfig) setDefaults() {
-	if ctx.HttpAuth != nil && ctx.HttpAuth.Realm == "" {
-		hostname, err := os.Hostname()
-		if err == nil {
-			ctx.HttpAuth.Realm = hostname
-		} else {
-			ctx.HttpAuth.Realm = "[realm not configured]"
+	if ctx.ProvisionAuth == nil {
+		ctx.ProvisionAuth = ctx.HttpAuth
+	}
+	for _, authConfig := range []*HttpAuthConfig{ctx.HttpAuth, ctx.ProvisionAuth} {
+		if authConfig != nil && authConfig.Realm == "" {
+			hostname, err := os.Hostname()
+			if err == nil {
+				authConfig.Realm = hostname
+			} else {
+				authConfig.Realm = "[realm not configured]"
+			}
 		}
 	}
 
@@ -109,7 +128,13 @@ func (ctx *AppConfig) setDefaults() {
 }
 
 func (ctx *AppConfig) establishLogger() {
-	ctx.Log = log.New(os.Stdout, "", log.LstdFlags)
+	r := ring.New(50)
+	for i := 0; i < r.Len(); i++ {
+		r.Value = ""
+		r = r.Next()
+	}
+	ctx.logBuffer = &RingLog{ring: r, out: os.Stdout}
+	ctx.Log = log.New(ctx.logBuffer, "", log.LstdFlags)
 }
 
 func (ctx *AppConfig) MoveLoggingToFile() {
@@ -121,9 +146,6 @@ func (ctx *AppConfig) MoveLoggingToFile() {
 			fmt.Errorf("Unable to create or open logfile: %s\n", err.Error())
 			os.Exit(1)
 		}
-		// Using a buffer seems like it might theoretically offer performance benefits, but would require a synchronized goroutine to flush it regularly.
-		//ctx.logBuffer = bufio.NewWriter(fileOutput)
-		//logOutput = ctx.logBuffer
 		logOutput = fileOutput
 		newLocation = ctx.LogFile
 	} else {
@@ -132,12 +154,6 @@ func (ctx *AppConfig) MoveLoggingToFile() {
 		newLocation = "a black hole (log location not configured.)"
 	}
 	ctx.Log.Printf("This log is moving to %s", newLocation)
-	ctx.Log.SetOutput(logOutput)
+	ctx.logBuffer.out = logOutput
 	ctx.Log.Printf("--- continuation of logging that began on stdout ---")
-}
-
-func (ctx *AppConfig) FlushLog() {
-	if ctx.logBuffer != nil {
-		ctx.logBuffer.Flush()
-	}
 }

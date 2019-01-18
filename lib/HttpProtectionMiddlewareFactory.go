@@ -10,20 +10,20 @@ import (
 )
 
 type HttpProtectionMiddlewareFactory struct {
-	config *AppConfig
+	config *HttpAuthConfig
 
 	protectingMiddleware http.Handler
 	protectedHandler     http.Handler
 }
 
-func NewHttpProtectionMiddlewareFactory(config AppConfig) HttpProtectionMiddlewareFactory {
+func NewHttpProtectionMiddlewareFactory(config *HttpAuthConfig) HttpProtectionMiddlewareFactory {
 	handler := new(HttpProtectionMiddlewareFactory)
-	handler.config = &config
+	handler.config = config
 	return *handler
 }
 
 func (ctx *HttpProtectionMiddlewareFactory) WrapInProtectionMiddleware(nestedHandler http.Handler) http.Handler {
-	authConfig := ctx.config.HttpAuth
+	authConfig := ctx.config
 	if authConfig == nil { // No authentication required.
 		return nestedHandler
 	} else {
