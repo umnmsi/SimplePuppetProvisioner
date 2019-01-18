@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/acarl005/stripansi"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
-	"html/template"
 	"log"
 	"os/exec"
 	"strings"
 	"syscall"
+	"text/template"
+
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
 )
 
 type GenericExecManager struct {
@@ -56,7 +57,7 @@ type TemplateGetter interface {
 
 func NewGenericExecManager(execTaskConfigsByName map[string]GenericExecConfig, puppetConfig *puppetconfig.PuppetConfig, log *log.Logger, notifyCallback func(message string)) *GenericExecManager {
 	execManager := GenericExecManager{
-		log: log,
+		log:                   log,
 		execTaskConfigsByName: execTaskConfigsByName,
 		puppetConfig:          puppetConfig,
 		notifyCallback:        notifyCallback,
@@ -234,10 +235,10 @@ func renderMessageTemplate(messageTemplate string, values TemplateGetter, stdout
 	funcMap := template.FuncMap{
 		"request": values.Get,
 		"StdOut": func() string {
-			return *stdout
+			return strings.Trim(*stdout, " \n")
 		},
 		"StdErr": func() string {
-			return *stderr
+			return strings.Trim(*stderr, " \n")
 		},
 	}
 	templateEngine := template.New("Message processor").Funcs(funcMap)

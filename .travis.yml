@@ -1,16 +1,13 @@
 language: go
 go:
-  - 1.8
-  - 1.9
+  - 1.11
   - tip
 
 os:
   - linux
 
 matrix:
-  allow_failures:
-    - go: tip
-  fast_finish: true
+ fast_finish: true
 
 before_install:
   - go get github.com/mattn/goveralls
