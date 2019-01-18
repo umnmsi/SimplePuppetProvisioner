@@ -3,12 +3,13 @@ package genericexec
 import (
 	"bytes"
 	"fmt"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
-	"html/template"
 	"log"
 	"os/exec"
 	"strings"
 	"syscall"
+	"text/template"
+
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
 )
 
 type GenericExecManager struct {
@@ -237,10 +238,10 @@ func renderMessageTemplate(messageTemplate string, values TemplateGetter, stdout
 	funcMap := template.FuncMap{
 		"request": values.Get,
 		"StdOut": func() string {
-			return *stdout
+			return strings.Trim(*stdout, " \n")
 		},
 		"StdErr": func() string {
-			return *stderr
+			return strings.Trim(*stderr, " \n")
 		},
 	}
 	templateEngine := template.New("Message processor").Funcs(funcMap)
