@@ -3,19 +3,21 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"net/http"
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/sppexec"
+	"github.com/mbaynton/go-genericexec"
 )
 
 type ProvisionHttpHandler struct {
 	appConfig   *AppConfig
 	notifier    *Notifications
 	certSigner  *certsign.CertSigner
-	execManager *genericexec.GenericExecManager
+	execManager *sppexec.SppExecManager
 }
 
 type TaskResult struct {
@@ -24,7 +26,7 @@ type TaskResult struct {
 	Message  string
 }
 
-func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *ProvisionHttpHandler {
+func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *sppexec.SppExecManager) *ProvisionHttpHandler {
 	handler := ProvisionHttpHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner, execManager: execManager}
 
 	return &handler

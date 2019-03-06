@@ -5,14 +5,15 @@ import (
 	"os"
 
 	"container/ring"
-	"github.com/go-chat-bot/bot/irc"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
-	"github.com/spf13/viper"
 	"io"
 	"io/ioutil"
 	"log"
 	"runtime"
+
+	"github.com/go-chat-bot/bot/irc"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/puppetconfig"
+	"github.com/mbaynton/go-genericexec"
+	"github.com/spf13/viper"
 )
 
 type AppConfig struct {

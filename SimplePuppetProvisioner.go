@@ -3,16 +3,18 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/fsnotify/fsnotify"
-	"github.com/mbaynton/SimplePuppetProvisioner/interfaces"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/mbaynton/SimplePuppetProvisioner/interfaces"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/sppexec"
+	"github.com/mbaynton/go-genericexec"
 )
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
 	}
 	lib.SetWebhookExecTaskConfigMap(appConfig.GithubWebhooks, execConfigMap)
 
-	execManager := genericexec.NewGenericExecManager(execConfigMap, appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
+	execManager := sppexec.NewSppExecManager(execConfigMap, appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
 
 	server := lib.NewHttpServer(appConfig, notifier, certSigner, execManager)
 
