@@ -6,12 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
-	"github.com/oliveagle/jsonpath"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/mbaynton/go-genericexec"
+	"github.com/oliveagle/jsonpath"
 )
 
 type GithubWebhookHttpHandler struct {

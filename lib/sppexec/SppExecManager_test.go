@@ -1,4 +1,4 @@
-package genericexec
+package sppexec
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/mbaynton/go-genericexec"
 )
 
 func newTestLogger() (*log.Logger, *bytes.Buffer) {
@@ -18,7 +20,7 @@ func newTestLogger() (*log.Logger, *bytes.Buffer) {
 	return testLog, &logBuf
 }
 
-func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*GenericExecManager, *bytes.Buffer, **[]string) {
+func sutFactory(taskConfigs map[string]genericexec.GenericExecConfig, execMocks []string) (*SppExecManager, *bytes.Buffer, **[]string) {
 	testLog, testLogBuf := newTestLogger()
 	notifications := []string{}
 	notificationsPtr := &notifications
@@ -26,11 +28,11 @@ func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*
 		notifications = append(*notificationsPtr, message)
 		notificationsPtr = &notifications
 	}
-	sut := NewGenericExecManager(taskConfigs, nil, testLog, mockNotification)
+	sut := NewSppExecManager(taskConfigs, nil, testLog, mockNotification)
 	if execMocks == nil {
 		execMocks = []string{"TestHelperExecHandler"}
 	}
-	sut.cmdFactory = func(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error) {
+	sut.CmdFactory = func(name string, argValues genericexec.TemplateGetter, arg ...string) (*exec.Cmd, error) {
 		// Actually make the executable that is run ourselves, with the first subroutine in execMocks acting as main()
 		run := execMocks[0]
 		if len(execMocks) > 1 {
@@ -38,7 +40,7 @@ func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*
 		}
 
 		// Perform argument substitution.
-		renderedArgs, err := renderArgTemplates(arg, argValues)
+		renderedArgs, err := genericexec.RenderArgTemplates(arg, argValues)
 		if err != nil {
 			return nil, err
 		}
@@ -59,13 +61,13 @@ func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*
 }
 
 type expectedResult struct {
-	result              *GenericExecResult
+	result              *genericexec.GenericExecResult
 	logExpects          []string
 	notificationExpects []string
 }
 
 func TestGenericExecManager_Successful_Reentrant(t *testing.T) {
-	taskConfigs := map[string]GenericExecConfig{
+	taskConfigs := map[string]genericexec.GenericExecConfig{
 		"test": {
 			Name:           "test",
 			Command:        "test",
@@ -75,18 +77,18 @@ func TestGenericExecManager_Successful_Reentrant(t *testing.T) {
 		},
 	}
 	expect := expectedResult{
-		result: &GenericExecResult{
+		result: &genericexec.GenericExecResult{
 			StdOut:  "a b",
 			Message: "Test command is happy with a b",
 		},
 		notificationExpects: []string{"Test command is happy with a b"},
 		logExpects:          []string{"Test command is happy with a b"},
 	}
-	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
+	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []genericexec.TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
 
 func TestGenericExecManager_Successful_Nonreentrant(t *testing.T) {
-	taskConfigs := map[string]GenericExecConfig{
+	taskConfigs := map[string]genericexec.GenericExecConfig{
 		"test": {
 			Name:           "test",
 			Command:        "test",
@@ -96,18 +98,18 @@ func TestGenericExecManager_Successful_Nonreentrant(t *testing.T) {
 		},
 	}
 	expect := expectedResult{
-		result: &GenericExecResult{
+		result: &genericexec.GenericExecResult{
 			StdOut:  "a b",
 			Message: "Test command is happy with a b",
 		},
 		notificationExpects: []string{"Test command is happy with a b"},
 		logExpects:          []string{"Test command is happy with a b"},
 	}
-	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
+	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []genericexec.TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
 
 func TestGenericExecManager_Fail_Reentrant(t *testing.T) {
-	taskConfigs := map[string]GenericExecConfig{
+	taskConfigs := map[string]genericexec.GenericExecConfig{
 		"test": {
 			Name:           "test",
 			Command:        "fail",
@@ -118,7 +120,7 @@ func TestGenericExecManager_Fail_Reentrant(t *testing.T) {
 		},
 	}
 	expect := expectedResult{
-		result: &GenericExecResult{
+		result: &genericexec.GenericExecResult{
 			StdErr:   "a b",
 			ExitCode: 2,
 			Message:  "Test command failed. Stderr: a b",
@@ -126,11 +128,11 @@ func TestGenericExecManager_Fail_Reentrant(t *testing.T) {
 		notificationExpects: []string{"Test command failed. Stderr: a b"},
 		logExpects:          []string{"Command \"fail a b\" exited 2!\nSending notification: \"Test command failed. Stderr: a b\"\nOn StdErr: a b"},
 	}
-	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
+	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []genericexec.TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
 
 func TestGenericExecManager_Fail_Nonreentrant(t *testing.T) {
-	taskConfigs := map[string]GenericExecConfig{
+	taskConfigs := map[string]genericexec.GenericExecConfig{
 		"test": {
 			Name:           "test",
 			Command:        "fail",
@@ -141,7 +143,7 @@ func TestGenericExecManager_Fail_Nonreentrant(t *testing.T) {
 		},
 	}
 	expect := expectedResult{
-		result: &GenericExecResult{
+		result: &genericexec.GenericExecResult{
 			StdErr:   "a b",
 			ExitCode: 2,
 			Message:  "Test command failed. Stderr: a b",
@@ -149,11 +151,11 @@ func TestGenericExecManager_Fail_Nonreentrant(t *testing.T) {
 		notificationExpects: []string{"Test command failed. Stderr: a b"},
 		logExpects:          []string{"Command \"fail a b\" exited 2!\nSending notification: \"Test command failed. Stderr: a b\"\nOn StdErr: a b"},
 	}
-	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
+	genericExecManagerTestCore(t, taskConfigs, []string{"test"}, []genericexec.TemplateGetter{url.Values{"value1": []string{"a"}}}, []expectedResult{expect})
 }
 
 func TestGenericExecManager_reuse(t *testing.T) {
-	taskConfigs := map[string]GenericExecConfig{
+	taskConfigs := map[string]genericexec.GenericExecConfig{
 		"test-reentrant": {
 			Name:           "test-reentrant",
 			Command:        "test",
@@ -173,14 +175,14 @@ func TestGenericExecManager_reuse(t *testing.T) {
 	}
 
 	taskNames := []string{"test-reentrant", "test", "test-reentrant", "test-reentrant", "test"}
-	taskArgs := make([]TemplateGetter, len(taskNames))
+	taskArgs := make([]genericexec.TemplateGetter, len(taskNames))
 	expects := make([]expectedResult, len(taskNames))
 
 	for i, _ := range taskNames {
 		uniqueString := fmt.Sprintf("Invocation %d", i+1)
 		taskArgs[i] = url.Values{"value1": []string{uniqueString}}
 		expects[i] = expectedResult{
-			result: &GenericExecResult{
+			result: &genericexec.GenericExecResult{
 				StdOut:   uniqueString,
 				ExitCode: 0,
 				Message:  uniqueString,
@@ -193,7 +195,7 @@ func TestGenericExecManager_reuse(t *testing.T) {
 	genericExecManagerTestCore(t, taskConfigs, taskNames, taskArgs, expects)
 }
 
-func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]GenericExecConfig, taskNamesSlice []string, taskArgsSlice []TemplateGetter, expectsSlice []expectedResult) {
+func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]genericexec.GenericExecConfig, taskNamesSlice []string, taskArgsSlice []genericexec.TemplateGetter, expectsSlice []expectedResult) {
 	sut, testLogBuf, notifications := sutFactory(taskConfigs, nil)
 	for i, taskName := range taskNamesSlice {
 		taskArgs := taskArgsSlice[i]
@@ -245,7 +247,7 @@ func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]GenericExec
 }
 
 func TestNewGenericExecManager_FactoryError(t *testing.T) {
-	taskConfigs := map[string]GenericExecConfig{
+	taskConfigs := map[string]genericexec.GenericExecConfig{
 		"test": {
 			Name:           "test",
 			Command:        "test",
@@ -256,7 +258,7 @@ func TestNewGenericExecManager_FactoryError(t *testing.T) {
 	}
 
 	sut, testLogBuf, _ := sutFactory(taskConfigs, nil)
-	sut.cmdFactory = func(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error) {
+	sut.CmdFactory = func(name string, argValues genericexec.TemplateGetter, arg ...string) (*exec.Cmd, error) {
 		return nil, errors.New("simulated error")
 	}
 

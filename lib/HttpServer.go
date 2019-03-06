@@ -4,22 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"net/http"
 	"time"
+
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/sppexec"
 )
 
 type HttpServer struct {
 	appConfig   AppConfig
 	notifier    *Notifications
 	certSigner  *certsign.CertSigner
-	execManager *genericexec.GenericExecManager
+	execManager *sppexec.SppExecManager
 	server      http.Server
 	startTime   time.Time
 }
 
-func NewHttpServer(config AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *HttpServer {
+func NewHttpServer(config AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *sppexec.SppExecManager) *HttpServer {
 	server := new(HttpServer)
 	server.appConfig = config
 	server.notifier = notifier

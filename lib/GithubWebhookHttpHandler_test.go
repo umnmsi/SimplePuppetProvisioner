@@ -2,13 +2,14 @@ package lib
 
 import (
 	"bytes"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
 	"html/template"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mbaynton/go-genericexec"
 )
 
 type execManagerMock struct {
