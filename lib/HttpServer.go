@@ -46,6 +46,8 @@ func (c *HttpServer) createRoutes(router *http.ServeMux) {
 
 	router.Handle("/webhook", NewGithubWebhookHttpHandler(c.appConfig.GithubWebhooks, c.execManager, c.appConfig.Log))
 
+	router.Handle("/nodeconfig", NewNodeConfigHandler(&c.appConfig, c.notifier, c.certSigner, c.execManager))
+
 	provisionProtectionMiddlewareFactory := NewHttpProtectionMiddlewareFactory(c.appConfig.ProvisionAuth)
 	provisionHandler := NewProvisionHttpHandler(&c.appConfig, c.notifier, c.certSigner, c.execManager)
 

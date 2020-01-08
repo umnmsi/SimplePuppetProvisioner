@@ -64,14 +64,3 @@ GithubWebhooks:
         SuccessMessage: '"{{request "$.head_commit.message" | printf "%.25s"}}{{ if gt (request "$.head_commit.message" | len) 25}}...{{end}}" by {{request "$.head_commit.author.username"}} in {{request "$.repository.name"}}:{{request "$.ref"}} has been synchronized to all compile masters.'
         ErrorMessage: 'ERROR synchronizing commit {{request "$.ref"}}: {{StdErr}}'
         Command: scripts/r10k-rsync.sh
-
-Notifications:
-  - Type: irc
-    IrcConfig:
-      Server: irc.msi.umn.edu:6667
-      Channels: "#iopsdev"
-      Nick: PuppetBot
-      Password: ""
-   - Type: gchat
-     Webhooks:
-        - 'https://chat.googleapis.com/v1/spaces/xxxxxxxxxxx/messages?key=xxxxx&token=xxxxx'

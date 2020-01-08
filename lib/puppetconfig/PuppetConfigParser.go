@@ -2,9 +2,11 @@ package puppetconfig
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os/exec"
 	"regexp"
+	"strings"
 )
 
 type PuppetConfigParser struct {
@@ -19,6 +21,7 @@ type PuppetConfig struct {
 	SslDir           string
 	CsrDir           string
 	SignedCertDir    string
+	EnvironmentPath  []string
 }
 
 func NewPuppetConfigParser(log *log.Logger) *PuppetConfigParser {
@@ -85,6 +88,8 @@ func (ctx PuppetConfigParser) parseConfig(configData *bytes.Buffer) {
 				parsedConfig.ConfFile = value
 			case "confdir":
 				parsedConfig.ConfDir = value
+			case "environmentpath":
+				parsedConfig.EnvironmentPath = strings.Split(value, ":")
 			}
 		}
 	}
@@ -97,6 +102,8 @@ func validateParsedConfig(cfg *PuppetConfig) bool {
 	ok = ok && cfg.SignedCertDir != ""
 	ok = ok && cfg.ConfFile != ""
 	ok = ok && cfg.ConfDir != ""
+	ok = ok && len(cfg.EnvironmentPath) != 0
+	fmt.Printf("Found EnvironmentPath %v\n", cfg.EnvironmentPath)
 
 	return ok
 }
