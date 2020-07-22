@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"strings"
 	"testing"
 )
 
@@ -17,11 +18,12 @@ func TestParser(t *testing.T) {
 	sslDir := "/g/h/i"
 	config := "/some/puppet.conf"
 	confdir := "/some"
+	environmentPath := "/a/b/c:/d/e/f"
 
 	for datasetId, testData := range parserDataProvider() {
 		sut := NewPuppetConfigParser(testLog)
 		confData.Reset()
-		confData.WriteString(fmt.Sprintf(testData.template, signedCertDir, csrDir, sslDir, config, confdir))
+		confData.WriteString(fmt.Sprintf(testData.template, signedCertDir, csrDir, sslDir, config, confdir, environmentPath))
 		sut.parseConfig(&confData)
 
 		if testData.expectValid {
@@ -33,6 +35,9 @@ func TestParser(t *testing.T) {
 			}
 			if sut.parsedConfig.SslDir != sslDir {
 				t.Errorf("Expected parser to identify ssl dir %s, got %s\n", sslDir, sut.parsedConfig.SslDir)
+			}
+			if strings.Join(sut.parsedConfig.EnvironmentPath, ":") != environmentPath {
+				t.Errorf("Expected parser to identify environment path %s, got %s\n", environmentPath, sut.parsedConfig.EnvironmentPath)
 			}
 		}
 		if validateParsedConfig(sut.parsedConfig) != testData.expectValid {
@@ -57,6 +62,7 @@ csrdir = %s
 ssldir = %s
 config = %s
 confdir = %s
+environmentpath = %s
 `,
 			expectValid: true,
 		},
@@ -65,7 +71,8 @@ confdir = %s
 csrdir = %s
 ssldir = %s
 config = %s
-confdir = %s`,
+confdir = %s
+environmentpath = %s`,
 			expectValid: true,
 		},
 		{
@@ -74,7 +81,8 @@ garbage = hi
 csrdir = %s
 ssldir = %s
 config = %s
-confdir = %s`,
+confdir = %s
+environmentpath = %s`,
 			expectValid: true,
 		},
 		{

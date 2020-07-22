@@ -19,12 +19,13 @@ type GenericExecManager struct {
 	puppetConfig          *puppetconfig.PuppetConfig
 	mutexQueues           map[string]chan mutexQueueMessage
 	notifyCallback        func(message string)
+	ResultChan            chan GenericExecResult
 
 	cmdFactory func(name string, argValues TemplateGetter, arg ...string) (*exec.Cmd, error)
 }
 
 type GenericExecManagerInterface interface {
-	RunTask(taskName string, getter TemplateGetter) <-chan GenericExecResult
+	RunTask(taskName string, getter TemplateGetter, uuid string) <-chan GenericExecResult
 }
 
 type GenericExecConfig struct {
@@ -38,6 +39,7 @@ type GenericExecConfig struct {
 
 type GenericExecResult struct {
 	Name     string
+	UUID     string
 	ExitCode int
 	StdOut   string
 	StdErr   string
@@ -47,6 +49,7 @@ type GenericExecResult struct {
 type mutexQueueMessage struct {
 	cmd            *exec.Cmd
 	execTaskConfig *GenericExecConfig
+	uuid           string
 	requestValues  TemplateGetter
 	resultChan     chan GenericExecResult
 }
@@ -75,6 +78,8 @@ func NewGenericExecManager(execTaskConfigsByName map[string]GenericExecConfig, p
 		}
 	}
 
+	execManager.ResultChan = make(chan GenericExecResult, 50)
+
 	return &execManager
 }
 
@@ -83,7 +88,7 @@ func (ctx *GenericExecManager) IsTaskConfigured(taskName string) bool {
 	return found
 }
 
-func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter) <-chan GenericExecResult {
+func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter, uuid string) <-chan GenericExecResult {
 	resultChan := make(chan GenericExecResult, 1)
 
 	// Translate task to Cmd.
@@ -93,12 +98,14 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 	}
 	cmd, err := ctx.cmdFactory(execConfig.Command, argValues, execConfig.Args...)
 	if err != nil {
-		resultChan <- GenericExecResult{
+		result := GenericExecResult{
 			Name:     taskName,
+			UUID:     uuid,
 			ExitCode: 1,
 			StdOut:   "",
 			StdErr:   err.Error(),
 		}
+		ctx.sendResult(resultChan, result)
 		close(resultChan)
 
 		ctx.log.Printf("Could not prepare an executable command from the configuration for task %s: %v", taskName, err)
@@ -106,10 +113,11 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 	}
 
 	if execConfig.Reentrant {
-		go ctx.doRunRunRunDaDooRunRun(cmd, &execConfig, argValues, resultChan)
+		go ctx.doRunRunRunDaDooRunRun(cmd, &execConfig, argValues, resultChan, uuid)
 	} else {
 		ctx.mutexQueues[execConfig.Command] <- mutexQueueMessage{
 			cmd:            cmd,
+			uuid:           uuid,
 			execTaskConfig: &execConfig,
 			requestValues:  argValues,
 			resultChan:     resultChan,
@@ -120,13 +128,13 @@ func (ctx *GenericExecManager) RunTask(taskName string, argValues TemplateGetter
 }
 
 // https://en.wikipedia.org/wiki/Da_Doo_Ron_Ron
-func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig *GenericExecConfig, templateValues TemplateGetter, resultChan chan<- GenericExecResult) {
+func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig *GenericExecConfig, templateValues TemplateGetter, resultChan chan<- GenericExecResult, uuid string) {
 	outBuffer := &bytes.Buffer{}
 	errBuffer := &bytes.Buffer{}
 	cmd.Stdout = outBuffer
 	cmd.Stderr = errBuffer
 
-	result := GenericExecResult{Name: execConfig.Name}
+	result := GenericExecResult{Name: execConfig.Name, UUID: uuid}
 	err := cmd.Run()
 	result.StdErr = strings.TrimSpace(errBuffer.String())
 	errBuffer.Truncate(0)
@@ -175,7 +183,9 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 	// Strip out ANSI color sequences from messages
 
 	if logMsg != "" {
-		ctx.log.Println(stripansi.Strip(string(logMsg)))
+		for _, line := range strings.Split(stripansi.Strip(string(logMsg)), "\n") {
+			ctx.log.Println(line)
+		}
 	}
 
 	if notificationMsg != "" {
@@ -183,13 +193,13 @@ func (ctx *GenericExecManager) doRunRunRunDaDooRunRun(cmd *exec.Cmd, execConfig 
 		result.Message = notificationMsg
 	}
 
-	resultChan <- result
+	ctx.sendResult(resultChan, result)
 	close(resultChan)
 }
 
 func (ctx *GenericExecManager) mutexQueueConsumer(queue <-chan mutexQueueMessage) {
 	for message, isOpen := <-queue; isOpen; message, isOpen = <-queue {
-		ctx.doRunRunRunDaDooRunRun(message.cmd, message.execTaskConfig, message.requestValues, message.resultChan)
+		ctx.doRunRunRunDaDooRunRun(message.cmd, message.execTaskConfig, message.requestValues, message.resultChan, message.uuid)
 	}
 }
 
@@ -270,4 +280,9 @@ func cmdStringApproximation(cmd *exec.Cmd) string {
 	}
 
 	return buffer.String()
+}
+
+func (ctx *GenericExecManager) sendResult(resultChan chan<- GenericExecResult, result GenericExecResult) {
+	resultChan <- result
+	ctx.ResultChan <- result
 }

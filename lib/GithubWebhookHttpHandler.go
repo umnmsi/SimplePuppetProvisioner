@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/githubwebhook"
 	"github.com/oliveagle/jsonpath"
 	"io"
 	"io/ioutil"
@@ -18,6 +20,7 @@ type GithubWebhookHttpHandler struct {
 	webhookConfig *WebhooksConfig
 	execManager   genericexec.GenericExecManagerInterface
 	log           *log.Logger
+	ResultChan    chan githubwebhook.GitHubWebhookResult
 }
 
 type WebhooksConfig struct {
@@ -43,6 +46,7 @@ func NewGithubWebhookHttpHandler(config *WebhooksConfig, execManager genericexec
 		execManager:   execManager,
 		log:           log,
 	}
+	webhookHandler.ResultChan = make(chan githubwebhook.GitHubWebhookResult, 5)
 
 	if webhookHandler.webhookConfig.R10kExecutable == "" {
 		webhookHandler.webhookConfig.R10kExecutable = "/opt/puppetlabs/puppet/bin/r10k"
@@ -76,13 +80,13 @@ func (ctx *GithubWebhookHttpHandler) ServeHTTP(response http.ResponseWriter, req
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 		response.Write([]byte(fmt.Sprintf("Error reading request body: %v", err.Error())))
-		ctx.log.Printf("Error reading webhook request body for %s event: %v", eventType, err)
+		ctx.log.Printf("%p Error reading webhook request body for %s event: %v", request, eventType, err)
 		return
 	}
 	if int64(len(body)) == maxRequestBodyBytes {
 		response.WriteHeader(http.StatusRequestEntityTooLarge)
 		response.Write([]byte(fmt.Sprintf("Request body must be less than %d bytes.", maxRequestBodyBytes)))
-		ctx.log.Printf("Not processing webhook request json data of more than %d bytes for %s event.", maxRequestBodyBytes, eventType)
+		ctx.log.Printf("%p Not processing webhook request json data of more than %d bytes for %s event.", request, maxRequestBodyBytes, eventType)
 		return
 	}
 
@@ -93,7 +97,7 @@ func (ctx *GithubWebhookHttpHandler) ServeHTTP(response http.ResponseWriter, req
 		if actualSignature == "" {
 			response.WriteHeader(http.StatusUnauthorized)
 			response.Write([]byte("This listener has a signing secret configured, but the request lacked a signature. Be sure the secret is also set in your webhook configuration on GitHub."))
-			ctx.log.Printf("Not processing webhook request for %s event: Missing X-Hub-Signature header.", eventType)
+			ctx.log.Printf("%p Not processing webhook request for %s event: Missing X-Hub-Signature header.", request, eventType)
 			return
 		}
 
@@ -112,7 +116,7 @@ func (ctx *GithubWebhookHttpHandler) ServeHTTP(response http.ResponseWriter, req
 	if err != nil {
 		response.WriteHeader(http.StatusBadRequest)
 		response.Write([]byte("The request body was not valid JSON."))
-		ctx.log.Printf("Not processing webhook request for %s event: Request body was invalid JSON: %v", eventType, err)
+		ctx.log.Printf("%p Not processing webhook request for %s event: Request body was invalid JSON: %v", request, eventType, err)
 		return
 	}
 
@@ -122,12 +126,28 @@ func (ctx *GithubWebhookHttpHandler) ServeHTTP(response http.ResponseWriter, req
 	for _, listener := range ctx.webhookConfig.Listeners {
 		// Does the listener match the event?
 		if listener.Event != "" && listener.Event == eventType {
-			ctx.execManager.RunTask(listener.ExecConfig.Name, templateGetter)
+			eventUuid := uuid.New()
+			res, _ := jsonpath.JsonPathLookup(bodyJson, "$.commits[:].id")
+			commits, ok := res.([]interface{})
+			if !ok {
+				ctx.log.Printf("%p Failed to determine commits from webhook push, not sending event", request)
+			} else {
+				commitStrings := make([]string, len(commits))
+				for i := range commits {
+					commitStrings[i] = commits[i].(string)
+				}
+				ctx.ResultChan <- githubwebhook.GitHubWebhookResult{
+					Event:   listener.Event,
+					Commits: commitStrings,
+					UUID:    eventUuid.String(),
+				}
+			}
+			ctx.execManager.RunTask(listener.ExecConfig.Name, templateGetter, eventUuid.String())
 			matchedListeners++
 		}
 	}
 
-	ctx.log.Printf("%d listener(s) matched incoming GitHub Webhook %s event.", matchedListeners, eventType)
+	ctx.log.Printf("%p %d listener(s) matched incoming GitHub Webhook %s event.", request, matchedListeners, eventType)
 	response.WriteHeader(http.StatusOK)
 	response.Write([]byte(fmt.Sprintf("%d listeners matched.", matchedListeners)))
 }

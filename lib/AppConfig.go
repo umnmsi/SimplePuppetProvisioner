@@ -16,15 +16,22 @@ import (
 )
 
 type AppConfig struct {
-	BindAddress      string
-	LogFile          string
-	HttpAuth         *HttpAuthConfig
-	ProvisionAuth    *HttpAuthConfig
-	PuppetExecutable string
-	PuppetConfDir    string
-	PuppetConfig     *puppetconfig.PuppetConfig
-	GenericExecTasks []*genericexec.GenericExecConfig
-	GithubWebhooks   *WebhooksConfig
+	BindAddress            string
+	LogFile                string
+	HttpAuth               *HttpAuthConfig
+	ProvisionAuth          *HttpAuthConfig
+	PuppetExecutable       string
+	PuppetConfDir          string
+	PuppetConfig           *puppetconfig.PuppetConfig
+	NodesDir               string
+	NodesPrivateKey        string
+	NodesGitUser           string
+	GenericExecTasks       []*genericexec.GenericExecConfig
+	GithubWebhooks         *WebhooksConfig
+	ClassifyWebhookTimeout int64
+	ClassifyExecTimeout    int64
+	NodeConfigTimeout      int64
+	DumpHeaders            bool
 
 	Notifications []*NotificationsConfig
 	Log           *log.Logger
@@ -119,11 +126,29 @@ func (ctx *AppConfig) setDefaults() {
 		}
 	}
 
+	if ctx.NodesPrivateKey == "" {
+		ctx.NodesPrivateKey = fmt.Sprintf("%s/.ssh/id_rsa", os.Getenv("HOME"))
+	}
+
+	if ctx.NodesGitUser == "" {
+		ctx.NodesGitUser = `git`
+	}
+
 	if ctx.GithubWebhooks == nil {
 		ctx.GithubWebhooks = &WebhooksConfig{
 			EnableStandardR10kListener: false,
 			Listeners:                  make([]ExecListener, 0),
 		}
+	}
+
+	if ctx.ClassifyWebhookTimeout == 0 {
+		ctx.ClassifyWebhookTimeout = 60
+	}
+	if ctx.ClassifyExecTimeout == 0 {
+		ctx.ClassifyExecTimeout = 60
+	}
+	if ctx.NodeConfigTimeout == 0 {
+		ctx.NodeConfigTimeout = 120
 	}
 }
 
@@ -143,7 +168,7 @@ func (ctx *AppConfig) MoveLoggingToFile() {
 	if ctx.LogFile != "" {
 		fileOutput, err := os.OpenFile(ctx.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 		if err != nil {
-			fmt.Errorf("Unable to create or open logfile: %s\n", err.Error())
+			fmt.Printf("Unable to create or open logfile: %s\n", err.Error())
 			os.Exit(1)
 		}
 		logOutput = fileOutput

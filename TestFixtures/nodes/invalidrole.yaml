@@ -1,0 +1,3 @@
+parameters:
+  primary_role:
+    - role1

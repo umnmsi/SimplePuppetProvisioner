@@ -4,4 +4,5 @@ echo "signeddir = a
 csrdir = b
 ssldir = c
 confdir = d
-config = e"
+config = e
+environmentpath = f"

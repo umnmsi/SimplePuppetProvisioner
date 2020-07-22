@@ -2,7 +2,6 @@ package puppetconfig
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"os/exec"
 	"regexp"
@@ -103,7 +102,6 @@ func validateParsedConfig(cfg *PuppetConfig) bool {
 	ok = ok && cfg.ConfFile != ""
 	ok = ok && cfg.ConfDir != ""
 	ok = ok && len(cfg.EnvironmentPath) != 0
-	fmt.Printf("Found EnvironmentPath %v\n", cfg.EnvironmentPath)
 
 	return ok
 }

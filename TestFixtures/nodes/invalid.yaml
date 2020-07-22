@@ -1,0 +1,18 @@
+---
+environment: persistent_systems_production
+parameters:
+  primary_role: api_msi_server__jobrunner
+  - invalid
+
+# This node has cname helpdesk.msi. Allow ssh from linux workstations for acctadmin.
+firewall_msi::rules::both:
+  200 Accept ssh from linux workstations:
+    proto: tcp
+    dport: 22
+    source: addressbook:Linux Workstations
+    state: NEW
+    action: accept
+
+additional_classes:
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all

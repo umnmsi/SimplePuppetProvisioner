@@ -4,141 +4,104 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
-	"gopkg.in/yaml.v2"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/nodeconfig"
 	"html"
 	"io/ioutil"
+	"log"
 	"net/http"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 )
 
+var nodeconfig_path = `/nodeconfig`
+
 type NodeConfigHandler struct {
-	appConfig   *AppConfig
-	notifier    *Notifications
-	certSigner  *certsign.CertSigner
-	execManager *genericexec.GenericExecManager
+	appConfig      *AppConfig
+	log            *log.Logger
+	certSigner     certsign.CertSignerInterface
+	nodeClassifier nodeconfig.NodeClassifierInterface
+	jsonMarshaller func(v interface{}) ([]byte, error)
+	actionTimeout  time.Duration
 }
 
-type NodeConfig struct {
-	Environment string
-	Parameters  struct {
-		PrimaryRole string `yaml:"primary_role"`
+func NewNodeConfigHandler(appConfig *AppConfig, certSigner certsign.CertSignerInterface, nodeClassifier nodeconfig.NodeClassifierInterface) *NodeConfigHandler {
+	handler := NodeConfigHandler{
+		appConfig:      appConfig,
+		log:            appConfig.Log,
+		certSigner:     certSigner,
+		nodeClassifier: nodeClassifier,
+		jsonMarshaller: json.Marshal,
+		actionTimeout:  time.Duration(appConfig.NodeConfigTimeout) * time.Second,
 	}
-}
-
-type EnvironmentsMsg struct {
-	Status       string
-	Message      string
-	Environments []string
-}
-
-type RolesMsg struct {
-	Status  string
-	Message string
-	Roles   []string
-}
-
-func NewNodeConfigHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *NodeConfigHandler {
-	handler := NodeConfigHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner, execManager: execManager}
+	appConfig.Log.Printf("NodeConfigHandler classification timeout: %v\n", handler.actionTimeout)
 	return &handler
 }
 
-func (ctx NodeConfigHandler) GetNodeConfig(node string) (NodeConfig, string) {
-	config := NodeConfig{}
-	var message string
-	source, err := ioutil.ReadFile("/home/nick/git/puppet/nodes/" + node + ".yaml")
-	if err != nil {
-		message = fmt.Sprintf("Failed to read YAML file for %s: %s", html.EscapeString(node), err)
-	} else {
-		err = yaml.Unmarshal(source, &config)
-		if err != nil {
-			message = fmt.Sprintf("Failed to parse YAML file for %s: %s", html.EscapeString(node), err)
-		} else {
-			message = fmt.Sprintf("Environment: %s, Primary Role: %s", config.Environment, config.Parameters.PrimaryRole)
-		}
-	}
-	fmt.Printf("node '%s', config %#v, message '%s'\n", node, config, message)
-	return config, message
-}
-
-func (ctx NodeConfigHandler) GetEnvironments() EnvironmentsMsg {
-	var environments []string
-	for _, path := range ctx.appConfig.PuppetConfig.EnvironmentPath {
-		dirs, err := ioutil.ReadDir(path)
-		if err != nil {
-			return EnvironmentsMsg{"ERROR", fmt.Sprintf("Failed to read environment path %s: %s", path, err), environments}
-		} else {
-			for _, environment := range dirs {
-				if !strings.HasPrefix(environment.Name(), ".") {
-					environments = append(environments, environment.Name())
-				}
-			}
-		}
-	}
-	return EnvironmentsMsg{"OK", "", environments}
-}
-
-func (ctx NodeConfigHandler) GetRoles(environment string) RolesMsg {
-	roles := []string{}
-	role_path := ""
-PathLoop:
-	for _, path := range ctx.appConfig.PuppetConfig.EnvironmentPath {
-		dirs, err := ioutil.ReadDir(path)
-		if err != nil {
-			return RolesMsg{"ERROR", fmt.Sprintf("Failed to read environment path %s: %s", path, err), roles}
-		} else {
-			for _, dir := range dirs {
-				if dir.Name() == environment {
-					role_path = filepath.Join(path, dir.Name(), "site", "role", "manifests")
-					break PathLoop
-				}
-			}
-		}
-	}
-	if role_path == "" {
-		return RolesMsg{"ERROR", fmt.Sprintf("Failed to find environment directory for '%s'", environment), roles}
-	}
-	files, err := ioutil.ReadDir(role_path)
-	if err != nil {
-		return RolesMsg{"ERROR", fmt.Sprintf("Failed to read role path %s: %s", role_path, err), roles}
-	} else {
-		for _, file := range files {
-			if strings.HasSuffix(file.Name(), ".pp") {
-				roles = append(roles, strings.TrimSuffix(file.Name(), ".pp"))
-			}
-		}
-	}
-	return RolesMsg{"OK", "", roles}
+func (ctx NodeConfigHandler) marshalJSON(v interface{}) ([]byte, error) {
+	json, err := ctx.jsonMarshaller(v)
+	return json, err
 }
 
 func (ctx NodeConfigHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	fmt.Printf("Request: %#v\n", request)
-	allowed, err := regexp.Match(`^/nodeconfig($)`, []byte(request.URL.Path))
-	if allowed {
-		response.WriteHeader(http.StatusOK)
-	} else {
+	allowed, err := regexp.Match(`^`+nodeconfig_path+`($)`, []byte(request.URL.Path))
+	if !allowed {
 		response.WriteHeader(http.StatusNotFound)
 		return
 	}
+
+	// Verify Uid and Gecos headers are present - if not, auth did not occur
+	uid := request.Header.Get("Uid")
+	gecos := request.Header.Get("Gecos")
+	if uid == "" || gecos == "" {
+		fmt.Fprintf(response, `Missing Uid or Gecos header - authentication appears to have been skipped. Bailing.`)
+		return
+	}
+	ctx.log.Printf("%p Found uid %s, gecos %s\n", request, uid, gecos)
 
 	action, cert, message := "", "", ""
 
 	switch request.Method {
 	case http.MethodGet:
 		q := request.URL.Query()
-		fmt.Printf("query: %#v\n", q)
+		ctx.log.Printf("%p Received nodeconfig GET request\n", request)
 		if q["action"] != nil {
 			action = q["action"][0]
 		}
 		switch action {
 		case "":
-		case "getEnvironments":
-			environments, err := json.Marshal(ctx.GetEnvironments())
+			if q["message"] != nil {
+				message = html.EscapeString(q["message"][0])
+			}
+		case "lookupNode":
+			if q["node"] == nil {
+				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Missing 'node' argument for action 'lookupNode'"}`)
+				return
+			}
+			node := q["node"][0]
+			config, err := ctx.nodeClassifier.GetClassification(node, false)
 			if err != nil {
-				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Failed to encode JSON: `+err.Error()+`"}`)
+				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Failed to get config for node %s: %s"}`, node, err)
+				return
+			}
+			json, err := ctx.marshalJSON(nodeconfig.NodeConfigResult{
+				Action:      "classify",
+				Success:     true,
+				Message:     "",
+				Node:        node,
+				Environment: config.Environment,
+				PrimaryRole: config.PrimaryRole,
+			})
+			if err != nil {
+				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Failed to encode JSON: %s"}`, err)
+				return
+			}
+			response.Write(json)
+			return
+		case "getEnvironments":
+			environments, err := ctx.marshalJSON(ctx.nodeClassifier.GetEnvironments())
+			if err != nil {
+				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Failed to encode JSON: %s"}`, err)
 				return
 			}
 			response.Write(environments)
@@ -149,9 +112,9 @@ func (ctx NodeConfigHandler) ServeHTTP(response http.ResponseWriter, request *ht
 				return
 			}
 			environment := q["environment"][0]
-			roles, err := json.Marshal(ctx.GetRoles(environment))
+			roles, err := ctx.marshalJSON(ctx.nodeClassifier.GetRoles(environment))
 			if err != nil {
-				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Failed to encode JSON: `+err.Error()+`"}`)
+				fmt.Fprintf(response, `{"Status":"ERROR","Message":"Failed to encode JSON: %s"}`, err)
 				return
 			}
 			response.Write(roles)
@@ -161,24 +124,24 @@ func (ctx NodeConfigHandler) ServeHTTP(response http.ResponseWriter, request *ht
 		}
 	case http.MethodPost:
 		request.ParseForm()
+		ctx.log.Printf("%p Received nodeconfig POST request: %#v\n", request, request.Form)
 		action = request.Form.Get("action")
 		switch action {
 		case "sign":
 			cert = request.Form.Get("cert")
 			if cert == "" {
 				message = "Missing 'cert' argument for action 'sign'"
-				action = ""
-			} else if false {
+			} else {
 				signingResultChan := ctx.certSigner.Sign(cert, false)
 				select {
 				case res := <-signingResultChan:
 					if res.Success {
-						message = fmt.Sprintf("Signing completed for %s: %s", cert, res.Message)
+						message = res.Message
 					} else {
 						message = fmt.Sprintf("Signing failed for %s: %s", cert, res.Message)
 					}
-				case <-time.After(60 * time.Second):
-					message = "Timeout waiting for signing"
+				case <-time.After(ctx.actionTimeout):
+					message = fmt.Sprintf("Signing failed for %s: Timed out", cert)
 				}
 			}
 		case "classify":
@@ -187,15 +150,27 @@ func (ctx NodeConfigHandler) ServeHTTP(response http.ResponseWriter, request *ht
 			cert = request.Form.Get("cert")
 			if cert == "" {
 				message = fmt.Sprintf("Missing 'cert' argument for action '%s'", html.EscapeString(action))
-				action = ""
 			} else {
+				environment := request.Form.Get("environment")
+				primary_role := request.Form.Get("primary_role")
+				classificationResultChan := ctx.nodeClassifier.Classify(cert, environment, primary_role, true, gecos, uid+`@umn.edu`)
+				select {
+				case res := <-classificationResultChan:
+					message = res.Message
+				case <-time.After(ctx.actionTimeout):
+					message = fmt.Sprintf("Classification failed for %s: Timed out", cert)
+				}
 			}
 		default:
 			message = fmt.Sprintf("Invalid action '%s'", html.EscapeString(action))
 		}
+		http.Redirect(response, request, fmt.Sprintf(`%s?message=%s`, nodeconfig_path, message), http.StatusSeeOther)
+		return
 	default:
 		message = fmt.Sprintf("Invalid method '%s'", html.EscapeString(request.Method))
 	}
+
+	response.WriteHeader(http.StatusOK)
 
 	fmt.Fprintf(response, `
 <html>
@@ -203,16 +178,44 @@ func (ctx NodeConfigHandler) ServeHTTP(response http.ResponseWriter, request *ht
 <style type="text/css">
 body { font-family: arial; }
 form { margin-block-end: 0; }
+table, div, a { font-size: 10pt; }
+#message { margin-bottom: 10px; }
+a:hover { text-decoration: underline; }
+a { color: blue; text-decoration: none; }
+a:visited { color: blue; }
+button { font-size: 10pt; white-space: nowrap; }
 th { padding: 0 5px; text-align: left; }
-td { padding: 0 5px; min-width: 100px; }
+td { padding: 0 5px; }
 tr:hover { background-color: #F0F0F0; }
 </style>
 <script type="text/javascript">
-function getEnvironments(id) {
-	console.log("getEnvironments", id);
+function lookupNode(node) {
+	document.getElementById('nodemessage').innerHTML = '';
+	document.getElementById('nodeclassify').style.display = 'inline';
+	document.getElementById('nodeclassify').disabled = true;
+	document.getElementById('nodesubmit').style.display = 'none';
 	r = new XMLHttpRequest();
 	r.onreadystatechange = function() {
-		console.log("getEnvironments response", id, this.readyState);
+		if (this.readyState === XMLHttpRequest.DONE) {
+			if (this.status === 200) {
+				response = JSON.parse(this.responseText);
+				if (response.Message != '')
+					document.getElementById('nodemessage').innerHTML = response.Message;
+				document.getElementById('nodeenvironment').innerHTML = response.Environment;
+				document.getElementById('noderole').innerHTML = response.PrimaryRole;
+				document.getElementById('nodeclassify').disabled = false;
+				document.getElementById('nodetr').setAttribute('data-cert', node);
+			} else {
+				document.getElementById('nodemessage').innerHTML = 'Problem: ' + r.responseText;
+			}
+		}
+	}
+	r.open('GET', '?action=lookupNode&node='+node);
+	r.send();
+}
+function getEnvironments(id) {
+	r = new XMLHttpRequest();
+	r.onreadystatechange = function() {
 		if (this.readyState === XMLHttpRequest.DONE) {
 			if (this.status === 200) {
 				msg = document.getElementById(id+'message');
@@ -224,7 +227,6 @@ function getEnvironments(id) {
 				env = document.getElementById(id+'environment');
 				new_env = env.cloneNode(false);
 				old_env = env.hasChildNodes() && 'value' in env.firstChild ? env.firstChild.value : env.textContent;
-				console.log("old env: " + old_env);
 				select = new_env.appendChild(document.createElement("select"))
 				select.name = 'environment';
 				select.addEventListener('change', function() { getRoles(id, this.value); }.bind(select));
@@ -238,6 +240,8 @@ function getEnvironments(id) {
 					}
 				}
 				env.parentNode.replaceChild(new_env, env);
+				if (old_env != '' && select.value != old_env)
+					new_msg.appendChild(document.createElement('div')).innerHTML = "Couldn't find environment '"+old_env+"'";
 				edit = document.getElementById(id+'classify')
 				edit.style.display = 'none';
 				submit = document.getElementById(id+'submit')
@@ -252,14 +256,12 @@ function getEnvironments(id) {
 	return false;
 }
 function getRoles(id, environment) {
-	console.log('getRoles', arguments);
 	if (environment === '') {
 		document.getElementById(id+'role').innerHTML = '';
 		return;
 	}
 	r = new XMLHttpRequest();
 	r.onreadystatechange = function() {
-		console.log("getRoles response", id, this.readyState);
 		if (this.readyState === XMLHttpRequest.DONE) {
 			if (this.status === 200) {
 				msg = document.getElementById(id+'message');
@@ -271,7 +273,6 @@ function getRoles(id, environment) {
 				role = document.getElementById(id+'role');
 				new_role = role.cloneNode(false);
 				old_role = role.hasChildNodes() && 'value' in role.firstChild ? role.firstChild.value : role.textContent;
-				console.log("old role: " + old_role);
 				select = new_role.appendChild(document.createElement("select"))
 				select.name = 'primary_role';
 				select.appendChild(document.createElement("option"))
@@ -295,11 +296,11 @@ function getRoles(id, environment) {
 }
 function addInput(form, name, value) {
 	input = form.appendChild(document.createElement('input'));
+	input.style.display = 'none';
 	input.name = name;
 	input.value = value;
 }
-function confirmSubmit(id) {
-	console.log('confirmSubmit', id)
+function confirmSubmit(action, id) {
 	environment_select = document.getElementById(id+'environment').firstChild;
 	environment = environment_select.value;
 	if (environment === '') {
@@ -313,20 +314,21 @@ function confirmSubmit(id) {
 		return;
 	form = document.body.appendChild(document.createElement('form'));
 	form.method = 'POST';
-	addInput(form, 'action', 'classifycsr');
+	form.action = '%s'
+	addInput(form, 'action', action);
 	addInput(form, 'cert', cert);
 	addInput(form, 'environment', environment);
 	addInput(form, 'primary_role', document.getElementById(id+'role').firstChild.value);
 	form.submit();
 }
 function confirmSign(id) {
-	console.log('confirmSign', id);
 	tr = document.getElementById(id+'tr');
 	cert = tr.getAttribute('data-cert');
 	if (!confirm('Sign certificate for '+cert+'?'))
 		return;
 	form = document.body.appendChild(document.createElement('form'));
 	form.method = 'POST';
+	form.action = '%s';
 	addInput(form, 'action', 'sign');
 	addInput(form, 'cert', cert);
 	form.submit();
@@ -334,45 +336,31 @@ function confirmSign(id) {
 </script>
 </head>
 <body>
-`)
+`, nodeconfig_path, nodeconfig_path)
 	if message != "" {
-		fmt.Fprintf(response, "<div>%s</div>", message)
+		fmt.Fprintf(response, "<div id=\"message\">%s</div>\n", message)
 	}
-
-	fmt.Fprintf(response, `<h2>Certificate Signing Requests</h2>`)
+	fmt.Fprintf(response, "<div><a href=\"?\">Refresh</a></div>\n")
+	fmt.Fprintf(response, "<h3>Certificate Signing Requests</h3>\n")
 	files, err := ioutil.ReadDir(ctx.appConfig.PuppetConfig.CsrDir)
 	if err != nil {
-		fmt.Fprintf(response, "Failed to read CsrDir: %s<br/>\n", err)
+		fmt.Fprintf(response, "Failed to read CsrDir '%s': %s<br/>\n", ctx.appConfig.PuppetConfig.CsrDir, err)
 	} else {
-		/*
-			fmt.Fprintf(response, `<form method="POST"><input type="hidden" name="action" value="sign"/><select name="cert"><option value=""></option>`)
-			for _, file := range files {
-				if strings.HasSuffix(file.Name(), ".pem") {
-					csrcert := strings.TrimSuffix(file.Name(), ".pem")
-					selected := ""
-					if action == "sign" && cert == csrcert {
-						selected = " selected"
-					}
-					fmt.Fprintf(response, "<option value=\"%s\"%s>%s</option>\n", csrcert, selected, csrcert)
-				}
-			}
-		*/
 		fmt.Fprintf(response, `
-<table cellspacing="0" cellpadding="0"
+<table cellspacing="0" cellpadding="0" width="100%%">
 	<tr>
 		<th>Certificate Name</th>
 		<th>Request Date</th>
 		<th>Environment</th>
 		<th>Primary Role</th>
-		<th>Message</th>
-		<th></th>
-		<th></th>
+		<th style="min-width:200px;">Message</th>
+		<th>Actions</th>
 	</tr>
 `)
 		for i, file := range files {
 			if strings.HasSuffix(file.Name(), ".pem") {
 				csrcert := strings.TrimSuffix(file.Name(), ".pem")
-				config, _ := ctx.GetNodeConfig(csrcert)
+				config, _ := ctx.nodeClassifier.GetClassification(csrcert, true)
 				signingDisabled := " disabled"
 				if config.Environment != "" {
 					signingDisabled = ""
@@ -380,24 +368,22 @@ function confirmSign(id) {
 				fmt.Fprintf(response, `
 	<tr id="csr%dtr" data-cert="%s">
 		<td>%s</td>
-		<td>%s</td>
+		<td style="white-space: nowrap;">%s</td>
 		<td id="csr%denvironment">%s</td>
 		<td id="csr%drole">%s</td>
 		<td id="csr%dmessage"></td>
-		<td>
+		<td style="white-space: nowrap;">
 			<button id="csr%dclassify" onclick="getEnvironments('csr%d');"/>Edit Classification</button>
-			<button style="display:none;" id="csr%dsubmit" onclick="confirmSubmit('csr%d');"/>Submit</button>
-		</td>
-		<td>
+			<button style="display:none;" id="csr%dsubmit" onclick="confirmSubmit('classifycsr', 'csr%d');"/>Update Classification</button>
 			<button onclick="confirmSign('csr%d');"%s/>Sign</button>
 		</td>
 	</tr>
 `,
-					i, csrcert, //TR data
+					i, csrcert, //TR
 					csrcert,                              //Certificate Name
 					file.ModTime().Format(time.RubyDate), //Request Date
 					i, config.Environment,                //Environment
-					i, config.Parameters.PrimaryRole, //Primary Role
+					i, config.PrimaryRole, //Primary Role
 					i,    //Message
 					i, i, //Classify
 					i, i, //Submit
@@ -407,32 +393,35 @@ function confirmSign(id) {
 		fmt.Fprintf(response, `</table>`)
 	}
 
-	fmt.Fprintf(response, `<h2>Nodes</h2>`)
-	files, err = ioutil.ReadDir("/home/nick/git/puppet/nodes")
+	fmt.Fprintf(response, `<h3>Nodes</h3>`)
+	files, err = ioutil.ReadDir(ctx.appConfig.NodesDir)
 	if err != nil {
-		fmt.Fprintf(response, "Failed to read nodes dir: %s<br/>\n", err)
+		fmt.Fprintf(response, "Failed to read nodes dir '%s': %s<br/>\n", ctx.appConfig.NodesDir, err)
 	} else {
-		fmt.Fprintf(response, `<form method="POST"><input type="hidden" name="action" value="classify"/><select name="cert"><option value=""></option>`)
+		fmt.Fprintf(response, `<table cellspacing="0" cellpadding="0">
+	<tr><th>Node</th><th>Environment</th><th>Primary Role</th><th>Message</th><th>Actions</th></tr>
+	<tr id="nodetr">
+		<td>
+			<select onchange="lookupNode(this.value);" name="cert">
+				<option value=""></option>
+`)
 		for _, file := range files {
 			if strings.HasSuffix(file.Name(), ".yaml") {
 				certname := strings.TrimSuffix(file.Name(), ".yaml")
-				selected := ""
-				if action == "classify" && cert == certname {
-					selected = " selected"
-				}
-				fmt.Fprintf(response, "<option value=\"%s\"%s>%s</option>\n", certname, selected, certname)
+				fmt.Fprintf(response, "\t\t\t\t<option value=\"%s\">%s</option>\n", certname, certname)
 			}
 		}
+		fmt.Fprintf(response, `			</select>
+		</td>
+		<td id="nodeenvironment"></td>
+		<td id="noderole"></td>
+		<td id="nodemessage"></td>
+		<td>
+			<button id="nodeclassify" onclick="getEnvironments('node');" disabled>Edit Classification</button>
+			<button style="display:none;" id="nodesubmit" onclick="confirmSubmit('classify', 'node');">Update Classification</button>
+		</td>
+	</tr>
+`)
 	}
-	fmt.Fprintf(response, "</select>")
-	if action == "classify" {
-		_, message := ctx.GetNodeConfig(cert)
-		fmt.Fprintf(response, message)
-		fmt.Fprintf(response, `<input type="submit" value="Update classification"/>`+"\n")
-	} else {
-		fmt.Fprintf(response, `<input type="submit" value="Lookup classification"/>`+"\n")
-	}
-	fmt.Fprintf(response, "</form>\n")
-
-	fmt.Fprintf(response, "</body></html>")
+	fmt.Fprintf(response, "</table>\n</body>\n</html>")
 }

@@ -3,12 +3,14 @@ package lib
 import (
 	"bytes"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
+	//"github.com/mbaynton/SimplePuppetProvisioner/lib/githubwebhook"
 	"html/template"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type execManagerMock struct {
@@ -17,7 +19,7 @@ type execManagerMock struct {
 	resultChans           []chan genericexec.GenericExecResult
 }
 
-func (ctx *execManagerMock) RunTask(taskName string, argValues genericexec.TemplateGetter) <-chan genericexec.GenericExecResult {
+func (ctx *execManagerMock) RunTask(taskName string, argValues genericexec.TemplateGetter, uuid string) <-chan genericexec.GenericExecResult {
 	ctx.lastTaskName = taskName
 
 	returnChan := make(chan genericexec.GenericExecResult, 1)
@@ -25,6 +27,7 @@ func (ctx *execManagerMock) RunTask(taskName string, argValues genericexec.Templ
 	argsString := strings.Join(argsRendered, " ")
 	returnChan <- genericexec.GenericExecResult{
 		Name:     taskName,
+		UUID:     uuid,
 		ExitCode: 0,
 		StdOut:   argsString,
 		StdErr:   "",
@@ -80,8 +83,14 @@ func sutFactory(config *WebhooksConfig) (*GithubWebhookHttpHandler, *bytes.Buffe
 	}
 
 	handler := NewGithubWebhookHttpHandler(config, execManager, testLog)
-
 	return handler, testLogBuf, execManager
+}
+
+func TestWebhookHandlerEmptyR10K(t *testing.T) {
+	sut, _, _ := sutFactory(&WebhooksConfig{})
+	if sut.webhookConfig.R10kExecutable != "/opt/puppetlabs/puppet/bin/r10k" {
+		t.Errorf("Expected empty R10K executable setting to use default value, but got %s", sut.webhookConfig.R10kExecutable)
+	}
 }
 
 func TestWebhookHandlerWrongMethod(t *testing.T) {
@@ -120,49 +129,71 @@ func TestWebhookHandlerMissingEvent(t *testing.T) {
 }
 
 func TestWebhookHandlerPushEvent(t *testing.T) {
-	sut, testLogBuf, execManagerMock := sutFactory(&WebhooksConfig{
-		Secret:                     "asdf",
-		EnableStandardR10kListener: true,
-		R10kExecutable:             "r10k",
-		Listeners: []ExecListener{
-			{Event: "push", ExecConfig: genericexec.GenericExecConfig{
-				Name:           "BodyParserTest",
-				Command:        "test",
-				Args:           []string{"property: {{ request \"$.property\" }}", "nested: {{ request \"$.object.v1\" }}"},
-				SuccessMessage: "{{ stdout }}",
-			}},
-		},
-	})
+	events := []string{"push", "push_with_commits"}
+	for _, event := range events {
+		t.Run(event, func(t *testing.T) {
+			sut, testLogBuf, execManagerMock := sutFactory(&WebhooksConfig{
+				Secret:                     "asdf",
+				EnableStandardR10kListener: true,
+				R10kExecutable:             "r10k",
+				Listeners: []ExecListener{
+					{Event: "push", ExecConfig: genericexec.GenericExecConfig{
+						Name:           "BodyParserTest",
+						Command:        "test",
+						Args:           []string{"property: {{ request \"$.property\" }}", "nested: {{ request \"$.object.v1\" }}"},
+						SuccessMessage: "{{ stdout }}",
+					}},
+				},
+			})
 
-	req := simulatedWebhookRequest(t, "push", sut)
-	response := httptest.NewRecorder()
-	sut.ServeHTTP(response, req)
+			req := simulatedWebhookRequest(t, event, sut)
+			response := httptest.NewRecorder()
+			sut.ServeHTTP(response, req)
 
-	if response.Code != http.StatusOK {
-		t.Error("Expected HTTP 200 OK, got ", response.Code, response.Body.String())
-	}
+			if response.Code != http.StatusOK {
+				t.Error("Expected HTTP 200 OK, got ", response.Code, response.Body.String())
+			}
 
-	expect := "property: property value nested: 1"
-	execResult := <-execManagerMock.resultChans[0]
-	if execResult.StdOut != expect {
-		t.Errorf("Expected simulated stdout to be \"%s\" but got \"%s\".", expect, execResult.StdOut)
-	}
+			expect := "property: property value nested: 1"
+			execResult := <-execManagerMock.resultChans[0]
+			if execResult.StdOut != expect {
+				t.Errorf("Expected simulated stdout to be \"%s\" but got \"%s\".", expect, execResult.StdOut)
+			}
 
-	expect = "deploy environment --puppetfile"
-	execResult = <-execManagerMock.resultChans[1]
-	if execResult.StdOut != expect {
-		t.Errorf("Expected simulated stdout to be \"%s\" but got \"%s\".", expect, execResult.StdOut)
-	}
+			expect = "deploy environment --puppetfile"
+			execResult = <-execManagerMock.resultChans[1]
+			if execResult.StdOut != expect {
+				t.Errorf("Expected simulated stdout to be \"%s\" but got \"%s\".", expect, execResult.StdOut)
+			}
 
-	logStuff := testLogBuf.String()
-	expect = "2 listener(s) matched incoming GitHub Webhook push event."
-	if !strings.Contains(logStuff, expect) {
-		t.Errorf("Expected log to contain \"%s\". Log: %s", expect, logStuff)
+			logStuff := testLogBuf.String()
+			expect = "2 listener(s) matched incoming GitHub Webhook push event."
+			if !strings.Contains(logStuff, expect) {
+				t.Errorf("Expected log to contain \"%s\". Log: %s", expect, logStuff)
+			}
+
+			if event == "push_with_commits" {
+				eventCount := 0
+				select {
+				case result := <-sut.ResultChan:
+					eventCount = eventCount + 1
+					if result.Commits[0] != "abcdef123456" {
+						t.Errorf("Expected to receive event with commit abcdef123456, but got %s", result)
+					}
+					if eventCount == 2 {
+						return
+					}
+				case <-time.After(5 * time.Second):
+					t.Error("Timeout waiting for commit event")
+					return
+				}
+			}
+		})
 	}
 }
 
-func simulatedWebhookRequest(t *testing.T, event string, sut *GithubWebhookHttpHandler) *http.Request {
-	bodyString := webhookBodyForEvent(t, event)
+func simulatedWebhookRequest(t *testing.T, eventDesc string, sut *GithubWebhookHttpHandler) *http.Request {
+	event, bodyString := webhookBodyForEvent(t, eventDesc)
 	req, err := http.NewRequest("POST", "http://0.0.0.0/webhook", strings.NewReader(bodyString))
 	if err != nil {
 		t.Fatal(err)
@@ -175,14 +206,15 @@ func simulatedWebhookRequest(t *testing.T, event string, sut *GithubWebhookHttpH
 	return req
 }
 
-func webhookBodyForEvent(t *testing.T, event string) string {
-	bodies := map[string]string{
-		"push": "{\"property\": \"property value\", \"object\": {\"v1\": 1, \"v2\": 2}}",
+func webhookBodyForEvent(t *testing.T, eventDesc string) (string, string) {
+	bodies := map[string][]string{
+		"push":              {"push", "{\"property\": \"property value\", \"object\": {\"v1\": 1, \"v2\": 2}}"},
+		"push_with_commits": {"push", "{\"property\": \"property value\", \"object\": {\"v1\": 1, \"v2\": 2}, \"commits\": [ { \"id\": \"abcdef123456\" } ]}"},
 	}
 
-	body, found := bodies[event]
+	body, found := bodies[eventDesc]
 	if !found {
-		t.Fatal("Unknown webhook event type to test: ", event)
+		t.Fatal("Unknown webhook event type to test: ", eventDesc)
 	}
-	return body
+	return body[0], body[1]
 }

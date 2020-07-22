@@ -34,12 +34,17 @@ type CertSigner struct {
 	stoppedCsrWatcher      chan struct{}
 	openFileFunc           func(name string, flag int, perm os.FileMode) (*os.File, error)
 	notifyCallback         func(message string)
+	ResultChan             chan SigningResult
 }
 
 type SigningResult struct {
 	Action  string
 	Success bool
 	Message string
+}
+
+type CertSignerInterface interface {
+	Sign(hostname string, cleanExistingCert bool) <-chan SigningResult
 }
 
 func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watcher *interfaces.FsnotifyWatcher, notifyCallback func(message string)) (*CertSigner, error) {
@@ -53,6 +58,7 @@ func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watc
 	certSigner.authorizedCertSubjects = &temp
 	certSigner.notifyCallback = notifyCallback
 	certSigner.openFileFunc = os.OpenFile
+	certSigner.ResultChan = make(chan SigningResult, 50)
 
 	// Set up csr watcher.
 	certSigner.csrWatcher = watcher
@@ -73,7 +79,7 @@ func NewCertSigner(puppetConfig puppetconfig.PuppetConfig, log *log.Logger, watc
 func (ctx *CertSigner) Clean(hostname string) <-chan SigningResult {
 	resultChan := make(chan SigningResult, 1)
 	if ctx.stopped {
-		resultChan <- SigningResult{Action: "revoke", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
+		ctx.sendResult(resultChan, SigningResult{Action: "revoke", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"})
 		close(resultChan)
 		return resultChan
 	}
@@ -94,9 +100,9 @@ func (ctx *CertSigner) Sign(hostname string, cleanExistingCert bool) <-chan Sign
 	resultChan := make(chan SigningResult, 3)
 	if ctx.stopped {
 		if cleanExistingCert {
-			resultChan <- SigningResult{Action: "revoke", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
+			ctx.sendResult(resultChan, SigningResult{Action: "revoke", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"})
 		}
-		resultChan <- SigningResult{Action: "sign", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"}
+		ctx.sendResult(resultChan, SigningResult{Action: "sign", Success: false, Message: "The certificate signing manager has been stopped. Shutting down?"})
 		close(resultChan)
 		return resultChan
 	}
@@ -202,9 +208,9 @@ func (ctx *CertSigner) signQueueWorker() {
 				}
 			} else {
 				info := fmt.Sprintf("Certificate for \"%s\" has been signed.", message.certSubject)
-				ctx.actionDone("sign", message, true, info)
 				ctx.notify(info)
 				ctx.log.Println(info)
+				ctx.actionDone("sign", message, true, info)
 			}
 		}
 	}
@@ -230,7 +236,10 @@ func (ctx *CertSigner) csrWatchWorker() {
 					}
 				}
 			}
-		case err := <-ctx.csrWatcher.Errors:
+		case err, ok := <-ctx.csrWatcher.Errors:
+			if !ok {
+				continue
+			}
 			ctx.log.Println("CSR watcher reported error: ", err)
 		case <-ctx.stoppedCsrWatcher:
 			close(ctx.signQueue)
@@ -271,13 +280,18 @@ func (ctx *CertSigner) actionDone(action string, entry signChanMessage, success 
 		}
 	}
 	if resultChan != nil {
-		resultChan <- SigningResult{
+		ctx.sendResult(resultChan, SigningResult{
 			Action:  action,
 			Success: success,
 			Message: message,
-		}
+		})
 		if action == "sign" || !entry.signCSR {
 			close(resultChan)
 		}
 	}
+}
+
+func (ctx *CertSigner) sendResult(resultChan chan<- SigningResult, result SigningResult) {
+	resultChan <- result
+	ctx.ResultChan <- result
 }

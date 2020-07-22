@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/nodeconfig"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"sort"
@@ -12,10 +14,11 @@ import (
 )
 
 type ProvisionHttpHandler struct {
-	appConfig   *AppConfig
-	notifier    *Notifications
-	certSigner  *certsign.CertSigner
-	execManager *genericexec.GenericExecManager
+	appConfig      *AppConfig
+	notifier       *Notifications
+	certSigner     *certsign.CertSigner
+	execManager    *genericexec.GenericExecManager
+	nodeClassifier *nodeconfig.NodeClassifier
 }
 
 type TaskResult struct {
@@ -24,8 +27,8 @@ type TaskResult struct {
 	Message  string
 }
 
-func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager) *ProvisionHttpHandler {
-	handler := ProvisionHttpHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner, execManager: execManager}
+func NewProvisionHttpHandler(appConfig *AppConfig, notifier *Notifications, certSigner *certsign.CertSigner, execManager *genericexec.GenericExecManager, nodeClassifier *nodeconfig.NodeClassifier) *ProvisionHttpHandler {
+	handler := ProvisionHttpHandler{appConfig: appConfig, notifier: notifier, certSigner: certSigner, execManager: execManager, nodeClassifier: nodeClassifier}
 
 	return &handler
 }
@@ -62,31 +65,27 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 
 	var environment = ""
 
-	// Some special treatment for the environment task, which only enables environment-aware notifications.
-	// How you say "contains" in Go...
-	if i := tasks.Search("environment"); i < len(tasks) && tasks[i] == "environment" {
-		environment = request.Form.Get("environment")
-
-		if environment == "" {
-			response.WriteHeader(http.StatusBadRequest)
-			response.Write([]byte("Environment provisioning was listed in tasks, but the target environment was not given."))
-			return
-		}
-	}
-	info := fmt.Sprintf("Provisioning %s", hostname)
-	if environment != "" {
-		info = info + fmt.Sprintf(" in the %s environment", environment)
-	}
-	ctx.notifier.Notify(fmt.Sprintf("%s...", info))
-
 	// Set up slice for response channels we've been asked to wait on.
 	waitResultChans := []reflect.SelectCase{}
 
 	// Cert-related tasks
 	var certSign, certRevoke = false, false
 
+	// Classification tasks
+	var classify = false
+
 	for i := len(tasks) - 1; i >= 0; i-- {
-		if tasks[i] == "cert-sign" {
+		if tasks[i] == "environment" {
+			environment = request.Form.Get("environment")
+			if environment == "" {
+				response.WriteHeader(http.StatusBadRequest)
+				response.Write([]byte("Environment provisioning was listed in tasks, but the target environment was not given."))
+				return
+			}
+			classify = true
+			// Remove the environment task from the remaining tasks list.
+			tasks = append(tasks[0:i], tasks[i+1:]...)
+		} else if tasks[i] == "cert-sign" {
 			certSign = true
 			// Remove the cert task from the remaining tasks list.
 			tasks = append(tasks[0:i], tasks[i+1:]...)
@@ -94,6 +93,29 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 			certRevoke = true
 			// Remove the cert task from the remaining tasks list.
 			tasks = append(tasks[0:i], tasks[i+1:]...)
+		}
+	}
+
+	info := fmt.Sprintf("Provisioning %s", hostname)
+	if environment != "" {
+		info = info + fmt.Sprintf(" in the %s environment", environment)
+	}
+	ctx.notifier.Notify(fmt.Sprintf("%s...", info))
+
+	if classify {
+		primary_role := request.Form.Get("primary_role")
+		classifyResultChan := ctx.nodeClassifier.Classify(hostname, environment, primary_role, true, "", "")
+		if i := waits.Search("environment"); i < len(waits) && waits[i] == "environment" {
+			waitResultChans = append(waitResultChans, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(classifyResultChan),
+			})
+		} else {
+			responseWrapper["environment"] = TaskResult{
+				Complete: false,
+				Success:  true,
+				Message:  "Classification operation was queued. To see the results in this response, include \"environment\" in the waits list.",
+			}
 		}
 	}
 
@@ -133,7 +155,7 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 	// Process generic exec tasks
 	for _, requestTask := range tasks {
 		if ctx.execManager.IsTaskConfigured(requestTask) {
-			execResultChan := ctx.execManager.RunTask(requestTask, &request.Form)
+			execResultChan := ctx.execManager.RunTask(requestTask, &request.Form, "")
 			if i := waits.Search(requestTask); i < len(waits) && waits[i] == requestTask {
 				waitResultChans = append(waitResultChans, reflect.SelectCase{
 					Dir:  reflect.SelectRecv,
@@ -157,6 +179,12 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 			continue
 		}
 		switch value := rvalue.Interface().(type) {
+		case nodeconfig.NodeConfigResult:
+			responseWrapper["environment"] = TaskResult{
+				Complete: true,
+				Success:  value.Success,
+				Message:  value.Message,
+			}
 		case certsign.SigningResult:
 			responseWrapper[fmt.Sprintf("cert-%s", value.Action)] = TaskResult{
 				Complete: true,
@@ -173,9 +201,15 @@ func (ctx ProvisionHttpHandler) ServeHTTP(response http.ResponseWriter, request 
 		waitsComplete++
 	}
 
+	// Test parsing
+	testWriter := json.NewEncoder(ioutil.Discard)
+	if err := testWriter.Encode(&responseWrapper); err != nil {
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	//response.WriteHeader(http.StatusOK)
 	response.Header().Set("Content-Type", "application/json")
 	jsonWriter := json.NewEncoder(response)
-	if err := jsonWriter.Encode(&responseWrapper); err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-	}
+	jsonWriter.Encode(&responseWrapper)
 }

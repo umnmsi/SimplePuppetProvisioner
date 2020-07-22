@@ -8,8 +8,11 @@ import (
 	"github.com/mbaynton/SimplePuppetProvisioner/lib"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
 	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
+	"github.com/mbaynton/SimplePuppetProvisioner/lib/nodeconfig"
+	"log"
 	"os"
 	"os/signal"
+	"reflect"
 	"runtime"
 	"syscall"
 	"time"
@@ -29,10 +32,14 @@ func main() {
 	}
 
 	appConfig := lib.LoadTheConfig(*configFile, searchDirs)
+
+	eventResultChans := []reflect.SelectCase{}
+	eventListenerChans := []reflect.SelectCase{}
+
 	notifier := lib.NewNotifications(&appConfig)
 	csrWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		appConfig.Log.Println("Unable to start certificate signing request watcher. Cannot proceed.")
+		appConfig.Log.Printf("ERROR: Unable to start certificate signing request watcher: %s\n", err)
 		os.Exit(1)
 	}
 	watcher := interfaces.FsnotifyWatcher{
@@ -44,7 +51,7 @@ func main() {
 	}
 	certSigner, err := certsign.NewCertSigner(*appConfig.PuppetConfig, appConfig.Log, &watcher, notifier.Notify)
 	if err != nil {
-		appConfig.Log.Println("Unable to start certificate signing manager. Cannot proceed.")
+		appConfig.Log.Printf("Unable to start certificate signing manager: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -55,12 +62,21 @@ func main() {
 	lib.SetWebhookExecTaskConfigMap(appConfig.GithubWebhooks, execConfigMap)
 
 	execManager := genericexec.NewGenericExecManager(execConfigMap, appConfig.PuppetConfig, appConfig.Log, notifier.Notify)
+	eventResultChans = append(eventResultChans, reflect.SelectCase{
+		Dir:  reflect.SelectRecv,
+		Chan: reflect.ValueOf(execManager.ResultChan),
+	})
 
-	server := lib.NewHttpServer(appConfig, notifier, certSigner, execManager)
-
-	if *logStdout == false {
-		appConfig.MoveLoggingToFile()
+	nodeClassifier, err := nodeconfig.NewNodeClassifier(appConfig.NodesDir, appConfig.NodesPrivateKey, appConfig.NodesGitUser, appConfig.PuppetConfig, appConfig.Log, notifier.Notify, appConfig.ClassifyWebhookTimeout, appConfig.ClassifyExecTimeout)
+	if err != nil {
+		appConfig.Log.Printf("ERROR: Unable to start node classifier: %s\n", err)
+		os.Exit(1)
 	}
+	eventResultChans = append(eventResultChans, reflect.SelectCase{
+		Dir:  reflect.SelectRecv,
+		Chan: reflect.ValueOf(nodeClassifier.ResultChan),
+	})
+	eventListenerChans = append(eventListenerChans, nodeClassifier.ListenerChans...)
 
 	stop := make(chan os.Signal, 1)
 	if runtime.GOOS == "windows" {
@@ -69,14 +85,30 @@ func main() {
 		signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 	}
 
+	server := lib.NewHttpServer(appConfig, notifier, certSigner, execManager, nodeClassifier, stop)
+
 	go server.Start()
+
+	// Wait for server to start to allow handlers to register event channels
+	<-server.StartChan
+	eventResultChans = append(eventResultChans, server.ResultChans...)
+	eventListenerChans = append(eventListenerChans, server.ListenerChans...)
+
+	appConfig.Log.Println("Received server start message. Starting event watcher...")
+
+	go eventWatcher(appConfig.Log, eventResultChans, eventListenerChans)
+
+	if *logStdout == false {
+		appConfig.MoveLoggingToFile()
+	}
 
 	// Wait for a SIGTERM.
 	<-stop
 
 	appConfig.Log.Println("Stopping...")
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	server.Shutdown(ctx)
 	appConfig.Log.Println("HTTP server shutdown.")
 
@@ -93,4 +125,27 @@ func makeExecTaskConfigsMap(config *lib.AppConfig) map[string]genericexec.Generi
 		execTaskConfigsByName[configuredTask.Name] = *configuredTask
 	}
 	return execTaskConfigsByName
+}
+
+func eventWatcher(log *log.Logger, eventResultChans, eventListenerChans []reflect.SelectCase) {
+	log.Printf("Found %d registered result channels\n", len(eventResultChans))
+	for index, resultChan := range eventResultChans {
+		log.Printf("eventResultChan %d %T\n", index, resultChan.Chan.Interface())
+	}
+	log.Printf("Found %d registered listener channels\n", len(eventListenerChans))
+	for index, resultChan := range eventListenerChans {
+		log.Printf("eventListenerChan %d %T\n", index, resultChan.Chan.Interface())
+	}
+	for {
+		index, event, ok := reflect.Select(eventResultChans)
+		if !ok {
+			eventResultChans[index].Chan = reflect.ValueOf(nil)
+			continue
+		}
+		for _, listener := range eventListenerChans {
+			if listener.Chan.Type().Elem() == event.Type() {
+				listener.Chan.Send(event)
+			}
+		}
+	}
 }

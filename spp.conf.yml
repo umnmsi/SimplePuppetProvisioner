@@ -10,13 +10,25 @@ LogFile: /tmp/spp.log
 
 # Provision API authentication setting - will default to HttpAuth values if not defined
 # ProvisionAuth:
-#   Type: basic
-#   DbFile: htpasswd
+#   Type: basic # digest also supported.
+#   DbFile: /path/to/.htpasswd # Consider the htpasswd or htdigest utilities
 
 PuppetExecutable: /opt/puppetlabs/bin/puppet
 
 # This defaults to /etc/puppetlabs/puppet which is almost always correct, so should not need to be set here.
 # PuppetConfDir: /etc/puppetlabs/puppet
+
+# Path to local nodes git repository
+# NodesDir: /path/to/repo
+
+# Path to private key used for git auth. Defaults to ${HOME}/.ssh/id_rsa
+# NodesPrivateKey: /path/to/id_rsa
+
+# User for git auth. Defaults to 'git'
+# NodesGitUser: git
+
+# Whether to include a dump of HTTP headers in logs. Defaults to false
+# DumpHeaders: true
 
 # You may define any arbitrary commands to be run as tasks here during node provisioning.
 # The Name attribute defines how to reference the command when calling the /provision http API.

@@ -58,6 +58,13 @@ func sutFactory(watcher *interfaces.FsnotifyWatcher, notifyCallback func(message
 
 	sut, err := NewCertSigner(puppetConfig, testlog, watcher, notifyCallback)
 
+	go func(resultChan chan SigningResult) {
+		for {
+			result := <-resultChan
+			fmt.Printf("Received event result %#v\n", result)
+		}
+	}(sut.ResultChan)
+
 	// Install test cmdFactory
 	if execMocks != nil {
 		sut.cmdFactory = func(name string, arg ...string) *exec.Cmd {
@@ -408,7 +415,7 @@ func TestCertSigner_Sign_HandlesDeferredCsr(t *testing.T) {
 		t.Errorf("Expected notification \"%s\", got \"%s\"", expect, notifications[1])
 	}
 	if !strings.Contains(logStuff, expect) {
-		t.Error("Log did not contain entry for successful signing.")
+		t.Errorf("Log did not contain entry for successful signing: %s", logStuff)
 	}
 
 	expect = "Certificate for \"foo.bar.com\" will be signed when a matching CSR arrives."

@@ -55,6 +55,13 @@ func sutFactory(taskConfigs map[string]GenericExecConfig, execMocks []string) (*
 		return currFactory(name, renderedArgs...)
 	}
 
+	go func(resultChan chan GenericExecResult) {
+		for {
+			result := <-resultChan
+			fmt.Printf("Received event result %#v\n", result)
+		}
+	}(sut.ResultChan)
+
 	return sut, testLogBuf, &notificationsPtr
 }
 
@@ -197,7 +204,7 @@ func genericExecManagerTestCore(t *testing.T, taskConfigs map[string]GenericExec
 	sut, testLogBuf, notifications := sutFactory(taskConfigs, nil)
 	for i, taskName := range taskNamesSlice {
 		taskArgs := taskArgsSlice[i]
-		resultChan := sut.RunTask(taskName, taskArgs)
+		resultChan := sut.RunTask(taskName, taskArgs, "")
 		result := <-resultChan
 
 		expect := expectsSlice[i]
@@ -260,7 +267,7 @@ func TestNewGenericExecManager_FactoryError(t *testing.T) {
 		return nil, errors.New("simulated error")
 	}
 
-	resultChan := sut.RunTask("test", url.Values{"value1": []string{"a"}})
+	resultChan := sut.RunTask("test", url.Values{"value1": []string{"a"}}, "")
 	result := <-resultChan
 
 	if result.ExitCode != 1 {
