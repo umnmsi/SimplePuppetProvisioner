@@ -3,8 +3,8 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/certsign"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/nodeconfig"
+	"github.com/umnmsi/SimplePuppetProvisioner/lib/certsign"
+	"github.com/umnmsi/SimplePuppetProvisioner/lib/nodeconfig"
 	"html"
 	"io/ioutil"
 	"log"

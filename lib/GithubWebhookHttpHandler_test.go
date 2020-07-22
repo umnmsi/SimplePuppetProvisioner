@@ -2,8 +2,8 @@ package lib
 
 import (
 	"bytes"
-	"github.com/mbaynton/SimplePuppetProvisioner/lib/genericexec"
-	//"github.com/mbaynton/SimplePuppetProvisioner/lib/githubwebhook"
+	"github.com/umnmsi/SimplePuppetProvisioner/lib/genericexec"
+	//"github.com/umnmsi/SimplePuppetProvisioner/lib/githubwebhook"
 	"html/template"
 	"log"
 	"net/http"
