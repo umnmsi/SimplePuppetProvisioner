@@ -52,7 +52,7 @@ func TestValidProvisionAuthResultsInAuthenticationRequired(t *testing.T) {
 	}
 	protectedHandler := sut.WrapInProtectionMiddleware(http.HandlerFunc(testHandler))
 
-	testRequest, _ := http.NewRequest("POST", "http://0.0.0.0/", strings.NewReader(""))
+	testRequest, _ := http.NewRequest("POST", "http://0.0.0.0/provision", strings.NewReader(""))
 	monitor := httptest.NewRecorder()
 	protectedHandler.ServeHTTP(monitor, testRequest)
 	if monitor.Code != 401 || called == true {
