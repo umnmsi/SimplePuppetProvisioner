@@ -13,7 +13,6 @@ before_install:
   - go get github.com/mattn/goveralls
 
 install:
-  - git clone https://github.com/mbaynton/bot.git $GOPATH/src/github.com/go-chat-bot/bot
   - go get -t -v ./...
 
 script:
