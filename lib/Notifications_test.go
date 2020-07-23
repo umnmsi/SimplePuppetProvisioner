@@ -5,6 +5,7 @@ import (
 	"github.com/go-chat-bot/bot"
 	"github.com/go-chat-bot/bot/irc"
 	"log"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -34,10 +35,16 @@ func TestNewNotifications_MultipleIrcLogs(t *testing.T) {
 
 	config := AppConfig{
 		Notifications: []*NotificationsConfig{
+			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "127.0.0.1:50123", Channels: []string{"#chan"}}},
 			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "127.0.0.1:6667", Channels: []string{"#chan"}}},
-			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "127.0.0.2:6667", Channels: []string{"#chan"}}},
 		},
 		Log: testLog,
+	}
+
+	_, err := net.Listen("tcp", "127.0.0.1:50123")
+	if err != nil {
+		t.Errorf("Failed to create test irc listener: %s", err)
+		return
 	}
 
 	NewNotifications(&config)

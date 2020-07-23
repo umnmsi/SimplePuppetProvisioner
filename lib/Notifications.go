@@ -65,7 +65,7 @@ func NewNotifications(config *AppConfig) *Notifications {
 					target := notificationTarget{bot: irc.SetUp(ircConfig), notifyChannels: ircConfig.Channels}
 					n.targets = append(n.targets, &target)
 					// Run the full irc plugin in a separate goroutine.
-					//go irc.Run(nil)
+					go irc.Run(nil)
 					ircConfigured = true
 				}
 			case "gchat":
