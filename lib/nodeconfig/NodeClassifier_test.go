@@ -3,13 +3,13 @@ package nodeconfig
 import (
 	"bytes"
 	"fmt"
-	"github.com/go-git/go-git"
-	"github.com/go-git/go-git/plumbing"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/uuid"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/genericexec"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/githubwebhook"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/puppetconfig"
-	. "github.com/umnmsi/SimplePuppetProvisioner/lib/testlib"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/genericexec"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/githubwebhook"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
+	. "github.com/umnmsi/SimplePuppetProvisioner/v2/lib/testlib"
 	"io/ioutil"
 	"log"
 	"os"
@@ -377,8 +377,8 @@ firewall_msi::rules::both:
     state: NEW
     action: accept
 additional_classes:
-- aaa_msi::ldap_backup_target
-- pam_access_msi::entry::allow_techsup_all
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all
 `,
 		},
 		{
@@ -399,8 +399,8 @@ firewall_msi::rules::both:
     state: NEW
     action: accept
 additional_classes:
-- aaa_msi::ldap_backup_target
-- pam_access_msi::entry::allow_techsup_all
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all
 `,
 		},
 		{
@@ -442,8 +442,8 @@ additional_classes:
 parameters:
   primary_role: test_role
   extra_param1:
-  - value1
-  - value2
+    - value1
+    - value2
   extra_param2: value1
 # This node has cname helpdesk.msi. Allow ssh from linux workstations for acctadmin.
 firewall_msi::rules::both:
@@ -454,8 +454,8 @@ firewall_msi::rules::both:
     state: NEW
     action: accept
 additional_classes:
-- aaa_msi::ldap_backup_target
-- pam_access_msi::entry::allow_techsup_all
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all
 `,
 		},
 		{
@@ -469,8 +469,8 @@ additional_classes:
 			Content: `environment: test_environment
 parameters:
   extra_param1:
-  - value1
-  - value2
+    - value1
+    - value2
   extra_param2: value1
 # This node has cname helpdesk.msi. Allow ssh from linux workstations for acctadmin.
 firewall_msi::rules::both:
@@ -481,8 +481,8 @@ firewall_msi::rules::both:
     state: NEW
     action: accept
 additional_classes:
-- aaa_msi::ldap_backup_target
-- pam_access_msi::entry::allow_techsup_all
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all
 `,
 		},
 		{
@@ -524,8 +524,8 @@ additional_classes:
 parameters:
   param1: value1
   param2:
-  - value1
-  - value2
+    - value1
+    - value2
   param3:
     param4: value1
   primary_role: test_role
@@ -538,8 +538,8 @@ firewall_msi::rules::both:
     state: NEW
     action: accept
 additional_classes:
-- aaa_msi::ldap_backup_target
-- pam_access_msi::entry::allow_techsup_all
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all
 `,
 		},
 		{
@@ -559,8 +559,8 @@ firewall_msi::rules::both:
     state: NEW
     action: accept
 additional_classes:
-- aaa_msi::ldap_backup_target
-- pam_access_msi::entry::allow_techsup_all
+  - aaa_msi::ldap_backup_target
+  - pam_access_msi::entry::allow_techsup_all
 environment: test_environment
 parameters:
   primary_role: test_role

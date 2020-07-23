@@ -6,8 +6,8 @@ import (
 
 	"container/ring"
 	"github.com/go-chat-bot/bot/irc"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/genericexec"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/puppetconfig"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/genericexec"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 	"github.com/spf13/viper"
 	"io"
 	"io/ioutil"

@@ -3,9 +3,9 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/certsign"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/genericexec"
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/nodeconfig"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/certsign"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/genericexec"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/nodeconfig"
 	"io/ioutil"
 	"net/http"
 	"reflect"

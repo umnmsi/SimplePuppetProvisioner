@@ -26,7 +26,10 @@ func (ctx *Notifications) Notify(message string) {
 	if ctx.enabled {
 		for _, target := range ctx.targets {
 			for _, channel := range target.notifyChannels {
-				target.bot.SendMessage(channel, message, nil)
+				target.bot.SendMessage(bot.OutgoingMessage{
+					Target:  channel,
+					Message: message,
+				})
 			}
 		}
 	}
@@ -62,7 +65,7 @@ func NewNotifications(config *AppConfig) *Notifications {
 					target := notificationTarget{bot: irc.SetUp(ircConfig), notifyChannels: ircConfig.Channels}
 					n.targets = append(n.targets, &target)
 					// Run the full irc plugin in a separate goroutine.
-					go irc.Run(nil)
+					//go irc.Run(nil)
 					ircConfigured = true
 				}
 			case "gchat":
@@ -74,7 +77,11 @@ func NewNotifications(config *AppConfig) *Notifications {
 					target := notificationTarget{
 						bot: bot.New(&bot.Handlers{
 							Response: gChatResponseHandlerWrapper(config),
-						}),
+						},
+							&bot.Config{
+								Protocol: `gchat`,
+								Server:   `gchat`,
+							}),
 						notifyChannels: cn.Webhooks,
 					}
 					n.targets = append(n.targets, &target)

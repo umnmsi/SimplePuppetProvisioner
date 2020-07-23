@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewNotifications_UnknownTypeLogs(t *testing.T) {
@@ -33,8 +34,8 @@ func TestNewNotifications_MultipleIrcLogs(t *testing.T) {
 
 	config := AppConfig{
 		Notifications: []*NotificationsConfig{
-			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "server:6667", Channels: []string{"#chan"}}},
-			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "server2:6667", Channels: []string{"#chan"}}},
+			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "127.0.0.1:6667", Channels: []string{"#chan"}}},
+			&NotificationsConfig{Type: "irc", IrcConfig: &irc.Config{Nick: "fred", Server: "127.0.0.2:6667", Channels: []string{"#chan"}}},
 		},
 		Log: testLog,
 	}
@@ -52,7 +53,11 @@ func TestNotificationsAreDispatched(t *testing.T) {
 		Response: func(target, message string, sender *bot.User) {
 			dispatchedMessage = message
 		},
-	})
+	},
+		&bot.Config{
+			Protocol: `test`,
+			Server:   `test`,
+		})
 
 	config := AppConfig{
 		Notifications: []*NotificationsConfig{},
@@ -62,6 +67,7 @@ func TestNotificationsAreDispatched(t *testing.T) {
 	sut.injectTestBot(testBot)
 	expect := "test notification"
 	sut.Notify(expect)
+	time.Sleep(200 * time.Millisecond)
 
 	if dispatchedMessage != expect {
 		t.Errorf("Expected the message \"%s\" to be dispatched, but got \"%s\"", expect, dispatchedMessage)

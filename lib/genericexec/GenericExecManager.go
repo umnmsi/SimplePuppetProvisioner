@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"text/template"
 
-	"github.com/umnmsi/SimplePuppetProvisioner/lib/puppetconfig"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 )
 
 type GenericExecManager struct {
