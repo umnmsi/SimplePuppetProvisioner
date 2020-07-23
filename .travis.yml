@@ -17,6 +17,7 @@ install:
 
 script:
   - diff -u <(echo -n) <(gofmt -d .)
-  - $GOPATH/bin/goveralls -service=travis-pro -covermode=atomic -v
+  - go test -covermode=atomic -coverprofile=cover.out ./...
+  - $GOPATH/bin/goveralls -service=travis-pro -coverprofile=cover.out
 
 sudo: false
