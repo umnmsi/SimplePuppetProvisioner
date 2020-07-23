@@ -17,6 +17,6 @@ install:
 
 script:
   - diff -u <(echo -n) <(gofmt -d .)
-  - $GOPATH/bin/goveralls -service=travis-ci
+  - $GOPATH/bin/goveralls -service=travis-pro
 
 sudo: false
