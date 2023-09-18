@@ -5,14 +5,15 @@ import (
 	"os"
 
 	"container/ring"
-	"github.com/go-chat-bot/bot/irc"
-	"github.com/spf13/viper"
-	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/genericexec"
-	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 	"io"
 	"io/ioutil"
 	"log"
 	"runtime"
+
+	"github.com/go-chat-bot/bot/irc"
+	"github.com/spf13/viper"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/genericexec"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 )
 
 type AppConfig struct {
@@ -21,6 +22,7 @@ type AppConfig struct {
 	HttpAuth               *HttpAuthConfig
 	ProvisionAuth          *HttpAuthConfig
 	PuppetExecutable       string
+	PuppetServerExecutable string
 	PuppetConfDir          string
 	PuppetConfig           *puppetconfig.PuppetConfig
 	NodesDir               string
@@ -95,6 +97,7 @@ func LoadTheConfig(configName string, configPaths []string) AppConfig {
 		C.Log.Println("Invalid puppet installation, cannot proceed.")
 		os.Exit(1)
 	}
+	puppetConfig.PuppetServerExecutable = C.PuppetServerExecutable
 	C.PuppetConfig = puppetConfig
 
 	return C
@@ -117,6 +120,9 @@ func (ctx *AppConfig) setDefaults() {
 
 	if ctx.PuppetExecutable == "" {
 		ctx.PuppetExecutable = "/opt/puppetlabs/bin/puppet"
+	}
+	if ctx.PuppetServerExecutable == "" {
+		ctx.PuppetServerExecutable = "/opt/puppetlabs/bin/puppetserver"
 	}
 	if ctx.PuppetConfDir == "" {
 		if runtime.GOOS == "windows" {

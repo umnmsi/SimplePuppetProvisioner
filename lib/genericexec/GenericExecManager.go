@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"text/template"
+	"os"
 
 	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 )
@@ -249,6 +250,10 @@ func renderMessageTemplate(messageTemplate string, values TemplateGetter, stdout
 		},
 		"StdErr": func() string {
 			return strings.Trim(*stderr, " \n")
+		},
+		"hostname": func() string {
+			hostname, _ := os.Hostname()
+			return hostname
 		},
 	}
 	templateEngine := template.New("Message processor").Funcs(funcMap)

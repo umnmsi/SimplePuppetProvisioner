@@ -14,13 +14,15 @@ type PuppetConfigParser struct {
 }
 
 type PuppetConfig struct {
-	PuppetExecutable string
-	ConfFile         string
-	ConfDir          string
-	SslDir           string
-	CsrDir           string
-	SignedCertDir    string
-	EnvironmentPath  []string
+	PuppetExecutable       string
+	PuppetServerExecutable string
+	PuppetVersion          string
+	ConfFile               string
+	ConfDir                string
+	SslDir                 string
+	CsrDir                 string
+	SignedCertDir          string
+	EnvironmentPath        []string
 }
 
 func NewPuppetConfigParser(log *log.Logger) *PuppetConfigParser {
@@ -32,6 +34,31 @@ func NewPuppetConfigParser(log *log.Logger) *PuppetConfigParser {
 
 func (ctx PuppetConfigParser) LoadPuppetConfig(puppetExecutable string, puppetConfDir string) *PuppetConfig {
 	var output bytes.Buffer
+
+	ctx.log.Printf("Asking \"%s\" for its version...", puppetExecutable)
+	versionCmd := exec.Cmd{
+		Path:   puppetExecutable,
+		Args:   []string{puppetExecutable, "--version"},
+		Stdout: &output,
+	}
+	versionCmd.Run()
+	var line string
+	var err error = nil
+	pattern := regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+	line, err = output.ReadString('\n')
+	if err != nil {
+		ctx.log.Printf("Failed to determine Puppet version from '%s'", output.String())
+		return nil
+	}
+	line = strings.TrimSpace(line)
+	matches := pattern.FindStringSubmatch(line)
+	if len(matches) == 0 {
+		ctx.log.Printf("Failed to find version from '%s'", line)
+		return nil
+	}
+	ctx.parsedConfig.PuppetVersion = matches[0]
+	ctx.log.Printf("Found Puppet version %s", ctx.parsedConfig.PuppetVersion)
+	output.Reset()
 
 	ctx.log.Printf("Asking \"%s\" for its configuration...", puppetExecutable)
 	// Run puppet config print on the main section, then on the server section, with server values taking precedence.
@@ -72,7 +99,7 @@ func (ctx PuppetConfigParser) parseConfig(configData *bytes.Buffer) {
 		line, err = configData.ReadString('\n')
 
 		matches := pattern.FindStringSubmatch(line)
-		if matches != nil && len(matches) > 0 {
+		if len(matches) > 0 {
 			name := matches[1]
 			value := matches[2]
 

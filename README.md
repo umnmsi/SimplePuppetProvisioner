@@ -6,19 +6,19 @@ This software is designed to live on your [Puppet](https://puppet.com/) master t
     Some configurability is provided to run alternative commands in response to received webhooks, for example to
     also rsync changes to additional compile masters. It's basically a subset of functionality offered by [webhook](https://github.com/adnanh/webhook),
     but does not require you to run two services.
-     
+
   * It can listen for requests sent during the first boot of new nodes in your infrastructure, and
       * Sign agent certificates for new nodes with a degree of security greater than turning on auto-signing. This task
         gets special treatment to handle the case / race condition where the first puppet run on the new node has not
         yet sent its certificate to the master. In that case, this software will watch for the certificate
         signing request to arrive from the agent and sign it as soon as it is available.
-      * Run additional scripts or commands through an extensive, templatized invocation system. This can be used to 
+      * Run additional scripts or commands through an extensive, templatized invocation system. This can be used to
         perform any custom actions your environment dictates for introduction of new nodes at your site. For example,
         this is used at [MSI](https://www.msi.umn.edu/) to inform a simple [ENC](https://puppet.com/docs/puppet/5.3/nodes_external.html#what-is-an-enc)
         which puppet environment the new node should get placed in.
 
-    The premise for the "first-boot" listener is that you either directly configure your trusted system images to run 
-    something like a `curl` call to this service on first boot, or have another provisioning system like cloud-init 
+    The premise for the "first-boot" listener is that you either directly configure your trusted system images to run
+    something like a `curl` call to this service on first boot, or have another provisioning system like cloud-init
     kick off a request to this software. This software supports several methods of HTTP authentication to verify that
     the request is trustworthy. When it receives an authenticated request, it will sign the certificate and/or run
     commands.
@@ -28,12 +28,12 @@ tasks.
 
 ## Example `curl` call
 This example call to the service using `curl` will cause the puppet master to sign a CSR for the host "newnode.my.org"
-(immediately if the agent has already submitted it, or when it arrives otherwise), and some custom command from the 
+(immediately if the agent has already submitted it, or when it arrives otherwise), and some custom command from the
 configuration file called "environment" to be run as well. It will also submit some HTTP authentication credentials
 using the digest method.
 ```bash
 $ curl http://puppet.my.org:8240/provision -d hostname=newnode.my.org -d tasks=cert-sign,environment \
---digest --user provision-user:SomeSuperSecretPassword  
+--digest --user provision-user:SomeSuperSecretPassword
 ```
 
 ## Requirements
@@ -42,6 +42,7 @@ That said,
   * Testing is occurring only on Linux. YMMV on Windows; feel free to provide feedback if you use this
     software in a Windows environment.
   * Puppet must be installed (of course).
+  * Puppet 6.0+ requires the `confdir` to be explictly set in the \[main\] section of puppet.conf
   * Any other tools you set up to run through `GenericExecTasks` must be installed (of course).
 
 ## Installation
@@ -57,7 +58,7 @@ and `go install` it.
 
 ## Starting and Stopping
 The process can typically be started simply by executing it with no arguments. It should be run as the same
-user that runs your puppet master server, user `puppet` on standard installations.  
+user that runs your puppet master server, user `puppet` on standard installations.
 It does not daemonize, so write initscripts / systemd services accordingly.
 
 The process should shut down cleanly in response to SIGTERMs.
@@ -65,20 +66,20 @@ The process should shut down cleanly in response to SIGTERMs.
 ## HTTP API Reference
 ### /provision
 #### Request
-**Method: POST**  
+**Method: POST**
 **Content-Type: application/x-www-form-urlencoded**
 <table border="1">
   <tr><th>Field</th><th>Required?</th><th>Example</th><th>Description</th></tr>
   <tr><td>hostname</td><td>required</td><td>foo.bar.com</td><td>The name of the host to be provisioned, as it will identify itself to puppet.</td></tr>
   <tr><td>tasks</td><td>required</td><td>cert-sign,cert-revoke,environment</td><td>Comma-separated list of provisioning operations to perform. Valid operations are the `Name`s defined in the `GenericExecTasks` configuration section, plus these special built-in task names:<ul><li>`cert-sign`: causes client certificate to be signed.</li><li>`cert-revoke`: causes any existing client certificate for same hostname to be revoked.</li></ul></td></tr>
-  <tr><td>waits</td><td>optional</td><td>cert-revoke,environment</td><td>Comma-separated list of provisioning operations to wait for before the response is sent back. If you need to know the outcome of a provisioning operation, add it to this list and its results will be included in the response.</td></tr>  
+  <tr><td>waits</td><td>optional</td><td>cert-revoke,environment</td><td>Comma-separated list of provisioning operations to wait for before the response is sent back. If you need to know the outcome of a provisioning operation, add it to this list and its results will be included in the response.</td></tr>
 </table>
 
 If you configure `GenericExecTasks`, you may also POST other fields and use them in the invocation template as a means
 to pass data to your task.
 
 #### Response
-**Content-Type: application/json**  
+**Content-Type: application/json**
 A json object containing a key matching each of the tasks requested. The value of each task key is an
 object with the following values:
 <table border="1">

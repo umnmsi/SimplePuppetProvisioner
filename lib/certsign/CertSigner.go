@@ -3,14 +3,15 @@ package certsign
 import (
 	"bytes"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/umnmsi/SimplePuppetProvisioner/v2/interfaces"
-	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 	"log"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/interfaces"
+	"github.com/umnmsi/SimplePuppetProvisioner/v2/lib/puppetconfig"
 )
 
 type signChanMessage struct {
@@ -191,7 +192,13 @@ func (ctx *CertSigner) signQueueWorker() {
 			if err != nil {
 				// If it was because the cert is not present, the CSR watcher will get it later.
 				stderr := ctx.lastCmdStderr.String()
-				if strings.Contains(stderr, fmt.Sprintf("Could not find CSR for: \"%s\"", message.certSubject)) {
+				var not_found_msg string
+				if ctx.puppetConfig.PuppetVersion < "6" {
+					not_found_msg = fmt.Sprintf("Could not find CSR for: \"%s\"", message.certSubject)
+				} else {
+					not_found_msg = fmt.Sprintf("Could not find certificate request for %s", message.certSubject)
+				}
+				if strings.Contains(stderr, not_found_msg) {
 					info := fmt.Sprintf("Certificate for \"%s\" will be signed when a matching CSR arrives.", message.certSubject)
 					ctx.notify(info)
 					ctx.log.Printf("%s\n", info)
@@ -250,11 +257,19 @@ func (ctx *CertSigner) csrWatchWorker() {
 
 func (ctx *CertSigner) puppetCmdFactory(name string, arg ...string) *exec.Cmd {
 	if name == "puppet" {
-		name = ctx.puppetConfig.PuppetExecutable
-		// Need to pass these for non-root puppet cli to act on puppet master file locations :|
-		origArg := arg
-		arg = []string{origArg[0], "--config", "/etc/puppetlabs/puppet/puppet.conf", "--confdir", "/etc/puppetlabs/puppet"}
-		arg = append(arg, origArg[1:]...)
+		if ctx.puppetConfig.PuppetVersion < "6" {
+			// Puppet < 6 uses 'puppet cert <clean|sign> <certname>'
+			name = ctx.puppetConfig.PuppetExecutable
+			origArg := arg
+			arg = []string{origArg[0], "--config", "/etc/puppetlabs/puppet/puppet.conf", "--confdir", "/etc/puppetlabs/puppet"}
+			arg = append(arg, origArg[1:]...)
+		} else {
+			// Puppet >= 6 uses 'puppetserver ca <clean|sign> --certname <certname>'
+			name = ctx.puppetConfig.PuppetServerExecutable
+			// Need to pass these for non-root puppet cli to act on puppet master file locations :|
+			origArg := arg
+			arg = []string{"ca", origArg[1], "--config", "/etc/puppetlabs/puppet/puppet.conf", "--certname", origArg[2]}
+		}
 	}
 	cmd := exec.Command(name, arg...)
 	ctx.lastCmdStdout = &bytes.Buffer{}
